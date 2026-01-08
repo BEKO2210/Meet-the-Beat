@@ -241,9 +241,11 @@ const updateAndDrawParticles = (ctx: CanvasRenderingContext2D, audioData: AudioD
 
   const colors = getColors(settings);
   const densityMultiplier = settings.particleDensity;
-  
+
   // Threshold for "Beat Hit"
-  const isBassHit = audioData.bass > (125 / settings.particleSensitivity);
+  // FIXED: Prevent division by zero
+  const safeSensitivity = Math.max(0.1, settings.particleSensitivity);
+  const isBassHit = audioData.bass > (125 / safeSensitivity);
 
   // --- SPAWNING LOGIC (Bottom Up Only) ---
   // PERFORMANCE OPTIMIERT: Reduzierte Spawn-Rate
@@ -640,12 +642,15 @@ const applyKaleidoscope = (
   segments: number,
   drawFunc: () => void
 ) => {
+  // FIXED: Prevent division by zero and ensure valid segment count
+  const safeSegments = Math.max(3, Math.min(12, segments));
+
   ctx.save();
   ctx.translate(width / 2, height / 2);
 
-  const angleStep = (Math.PI * 2) / segments;
+  const angleStep = (Math.PI * 2) / safeSegments;
 
-  for (let i = 0; i < segments; i++) {
+  for (let i = 0; i < safeSegments; i++) {
     ctx.save();
     ctx.rotate(angleStep * i);
 
@@ -709,9 +714,12 @@ const drawCircularNeon = (
     ctx.translate(-cx, -cy);
     
     // Draw Image centered
-    const scale = Math.max((radius * 2) / centerImage.width, (radius * 2) / centerImage.height);
-    const w = centerImage.width * scale;
-    const h = centerImage.height * scale;
+    // FIXED: Prevent division by zero for image dimensions
+    const imgWidth = Math.max(1, centerImage.width);
+    const imgHeight = Math.max(1, centerImage.height);
+    const scale = Math.max((radius * 2) / imgWidth, (radius * 2) / imgHeight);
+    const w = imgWidth * scale;
+    const h = imgHeight * scale;
     ctx.drawImage(centerImage, cx - w/2, cy - h/2, w, h);
     
     ctx.restore();
@@ -849,9 +857,11 @@ const drawReactiveWave = (
   ctx.strokeStyle = colors[0];
   ctx.lineJoin = 'round';
   ctx.globalCompositeOperation = 'lighter';
-  
+
   ctx.beginPath();
-  const sliceWidth = width / waveData.length;
+  // FIXED: Prevent division by zero
+  const safeWaveLength = Math.max(1, waveData.length);
+  const sliceWidth = width / safeWaveLength;
   let x = 0;
 
   for (let i = 0; i < waveData.length; i++) {
@@ -912,10 +922,13 @@ export const renderFrame = (
   ctx.save();
   if (bgImage) {
     // cover fit logic
-    const scale = Math.max(width / bgImage.width, height / bgImage.height);
-    const x = (width / 2) - (bgImage.width / 2) * scale;
-    const y = (height / 2) - (bgImage.height / 2) * scale;
-    ctx.drawImage(bgImage, x, y, bgImage.width * scale, bgImage.height * scale);
+    // FIXED: Prevent division by zero for image dimensions
+    const bgWidth = Math.max(1, bgImage.width);
+    const bgHeight = Math.max(1, bgImage.height);
+    const scale = Math.max(width / bgWidth, height / bgHeight);
+    const x = (width / 2) - (bgWidth / 2) * scale;
+    const y = (height / 2) - (bgHeight / 2) * scale;
+    ctx.drawImage(bgImage, x, y, bgWidth * scale, bgHeight * scale);
     
     if (settings.enableDarkOverlay) {
         ctx.fillStyle = 'rgba(0,0,0,0.6)';

@@ -228,8 +228,8 @@ const VisualizerCanvas: React.FC<Props> = ({
 
     // Calculate bands
     let bassSum = 0, midSum = 0, trebleSum = 0;
-    const bassLimit = Math.floor(bufferLength * 0.05);
-    const midLimit = Math.floor(bufferLength * 0.3);
+    const bassLimit = Math.max(1, Math.floor(bufferLength * 0.05)); // FIXED: Ensure > 0
+    const midLimit = Math.max(bassLimit + 1, Math.floor(bufferLength * 0.3)); // FIXED: Ensure > bassLimit
 
     for (let i = 0; i < bufferLength; i++) {
       if (i < bassLimit) bassSum += dataArray[i];
@@ -237,12 +237,16 @@ const VisualizerCanvas: React.FC<Props> = ({
       else trebleSum += dataArray[i];
     }
 
+    // FIXED: Prevent division by zero
+    const midDivisor = Math.max(1, midLimit - bassLimit);
+    const trebleDivisor = Math.max(1, bufferLength - midLimit);
+
     const audioData: AudioData = {
       frequencyData: dataArray,
       waveData: waveArray,
       bass: bassSum / bassLimit,
-      mid: midSum / (midLimit - bassLimit),
-      treble: trebleSum / (bufferLength - midLimit)
+      mid: midSum / midDivisor,
+      treble: trebleSum / trebleDivisor
     };
     
     // Pass current derived width/height to renderer
