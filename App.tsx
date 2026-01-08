@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useRef } from 'react';
 import VisualizerCanvas from './components/VisualizerCanvas';
 import Controls from './components/Controls';
-import { VisualizerSettings, VisualizerStyle, ColorPalette, ParticleMode, AspectRatio } from './types';
+import { VisualizerSettings, VisualizerStyle, ColorPalette, ParticleMode, AspectRatio, CameraShakeMode, PostProcessEffect } from './types';
 
 const App: React.FC = () => {
   const [audioFile, setAudioFile] = useState<File | null>(null);
@@ -19,19 +19,44 @@ const App: React.FC = () => {
   const [settings, setSettings] = useState<VisualizerSettings>({
     style: VisualizerStyle.CIRCULAR_NEON,
     palette: ColorPalette.CYAN_MAGENTA,
-    customColors: ['#ff0055', '#00f3ff', '#ffffff'], 
-    aspectRatio: AspectRatio.LANDSCAPE, // Default 16:9
+    customColors: ['#ff0055', '#00f3ff', '#ffffff'],
+    aspectRatio: AspectRatio.LANDSCAPE,
+
+    // Particles
     enableParticles: true,
-    particleMode: ParticleMode.MIX, // Default to Mix
+    particleMode: ParticleMode.MIX,
     particleDensity: 1.0,
-    particleSensitivity: 1.2, // Default particle sensitivity
+    particleSensitivity: 1.2,
     particlesReactToBeat: true,
+    particleTrails: false,
+    particleGravity: false,
+    particleColorShift: false,
+
+    // Camera Shake
     enableBassShake: true,
+    cameraShakeMode: CameraShakeMode.MEDIUM,
+    shakeRotation: false,
+
+    // Effects
     enableDarkOverlay: false,
     centerImageRotation: false,
-    smoothing: 0.85, 
+    enablePerlinNoise: false,
+    enableKaleidoscope: false,
+    kaleidoscopeSegments: 6,
+
+    // Post Processing
+    postProcessEffects: [],
+    chromaticAberrationIntensity: 3,
+    scanlineIntensity: 0.5,
+    motionBlurIntensity: 0.3,
+
+    // Audio
+    smoothing: 0.85,
     bloomIntensity: 1.0,
     sensitivity: 1.0,
+
+    // Frequency Display
+    showFrequencyBars: false,
   });
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);

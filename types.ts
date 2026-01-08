@@ -11,20 +11,35 @@ export enum ColorPalette {
   GOLDEN_HOUR = 'GOLDEN_HOUR',
   FIRE_ICE = 'FIRE_ICE',
   COTTON_CANDY = 'COTTON_CANDY',
-  CUSTOM = 'CUSTOM', // New Manual Mode
+  OCEAN_DEEP = 'OCEAN_DEEP',
+  LAVA_FLOW = 'LAVA_FLOW',
+  AURORA = 'AURORA',
+  NEON_CITY = 'NEON_CITY',
+  ROYAL_PURPLE = 'ROYAL_PURPLE',
+  EMERALD_DREAM = 'EMERALD_DREAM',
+  CUSTOM = 'CUSTOM',
 }
 
 export enum ParticleType {
   ORB = 'ORB',
   STAR = 'STAR',
-  DUST = 'DUST'
+  DUST = 'DUST',
+  RING = 'RING',
+  HEART = 'HEART',
+  NOTE = 'NOTE',
+  SPARK = 'SPARK'
 }
 
 export enum ParticleMode {
   MIX = 'MIX',
   ORBS = 'ORBS',
   STARS = 'STARS',
-  DUST = 'DUST'
+  DUST = 'DUST',
+  RINGS = 'RINGS',
+  HEARTS = 'HEARTS',
+  NOTES = 'NOTES',
+  SPARKS = 'SPARKS',
+  PREMIUM_MIX = 'PREMIUM_MIX'
 }
 
 export enum AspectRatio {
@@ -32,27 +47,63 @@ export enum AspectRatio {
   PORTRAIT = 'PORTRAIT'    // 9:16
 }
 
+export enum CameraShakeMode {
+  OFF = 'OFF',
+  SUBTLE = 'SUBTLE',
+  MEDIUM = 'MEDIUM',
+  INTENSE = 'INTENSE',
+  EARTHQUAKE = 'EARTHQUAKE'
+}
+
+export enum PostProcessEffect {
+  CHROMATIC_ABERRATION = 'CHROMATIC_ABERRATION',
+  SCANLINES = 'SCANLINES',
+  CRT = 'CRT',
+  MOTION_BLUR = 'MOTION_BLUR'
+}
+
 export interface VisualizerSettings {
   style: VisualizerStyle;
   palette: ColorPalette;
   customColors: [string, string, string]; // User selected colors
-  
-  aspectRatio: AspectRatio; // New: Output format
-  
+
+  aspectRatio: AspectRatio; // Output format
+
+  // Particles
   enableParticles: boolean;
-  particleMode: ParticleMode; // New: Selectable particle type
+  particleMode: ParticleMode;
   particleDensity: number; // 0.1 to 3.0 multiplier for quantity
-  particleSensitivity: number; // New: Specific sensitivity for particle beats
+  particleSensitivity: number; // Specific sensitivity for particle beats
   particlesReactToBeat: boolean; // If true, explode on beat. If false, just ambient.
-  
+  particleTrails: boolean; // Motion blur trails
+  particleGravity: boolean; // Physics-based gravity
+  particleColorShift: boolean; // Color changes based on audio
+
+  // Camera Shake
   enableBassShake: boolean;
+  cameraShakeMode: CameraShakeMode;
+  shakeRotation: boolean; // Add rotation to shake
+
+  // Effects
   enableDarkOverlay: boolean;
-  
   centerImageRotation: boolean; // Rotate the center logo?
-  
+  enablePerlinNoise: boolean; // Organic displacement
+  enableKaleidoscope: boolean; // Psychedelic mirror effect
+  kaleidoscopeSegments: number; // 3-12 segments
+
+  // Post Processing
+  postProcessEffects: PostProcessEffect[];
+  chromaticAberrationIntensity: number; // 0 to 10
+  scanlineIntensity: number; // 0 to 1
+  motionBlurIntensity: number; // 0 to 1
+
+  // Audio
   smoothing: number; // 0.1 to 0.99
-  bloomIntensity: number; // 0 to 1
-  sensitivity: number; // 0.5 to 2.0
+  bloomIntensity: number; // 0 to 2
+  sensitivity: number; // 0.5 to 3.0
+
+  // Frequency Display
+  showFrequencyBars: boolean; // Show frequency analyzer overlay
 }
 
 export interface Particle {
@@ -66,14 +117,19 @@ export interface Particle {
   life: number;
   color: string;
   type: ParticleType;
-  rotation: number;     // For stars
+  rotation: number;
   rotationSpeed: number;
-  wobble: number;       // For organic movement phase
-  
-  // New organic props
+  wobble: number;
+
+  // Organic props
   pulsePhase: number;   // Current phase in the breathing cycle (0-2PI)
   pulseSpeed: number;   // How fast this specific particle breathes
   targetSize: number;   // For smooth interpolation during bass hits
+
+  // Premium features
+  trail: Array<{x: number, y: number, alpha: number}>; // Motion trail
+  hue: number; // For color shifting (0-360)
+  hueSpeed: number; // Color shift speed
 }
 
 export interface AudioData {

@@ -1,5 +1,62 @@
-import { VisualizerSettings, VisualizerStyle, AudioData, Particle, ColorPalette, ParticleType, ParticleMode, AspectRatio } from '../types';
+import { VisualizerSettings, VisualizerStyle, AudioData, Particle, ColorPalette, ParticleType, ParticleMode, AspectRatio, CameraShakeMode, PostProcessEffect } from '../types';
 import { PALETTES } from '../constants';
+
+// ============================================================================
+// PERLIN NOISE IMPLEMENTATION (For organic camera shake and displacement)
+// ============================================================================
+class PerlinNoise {
+  private permutation: number[];
+
+  constructor(seed: number = 0) {
+    this.permutation = [];
+    for (let i = 0; i < 256; i++) {
+      this.permutation[i] = i;
+    }
+    // Shuffle with seed
+    for (let i = 255; i > 0; i--) {
+      const j = Math.floor((Math.sin(seed + i) * 10000) % (i + 1));
+      [this.permutation[i], this.permutation[j]] = [this.permutation[j], this.permutation[i]];
+    }
+    this.permutation = [...this.permutation, ...this.permutation];
+  }
+
+  private fade(t: number): number {
+    return t * t * t * (t * (t * 6 - 15) + 10);
+  }
+
+  private lerp(t: number, a: number, b: number): number {
+    return a + t * (b - a);
+  }
+
+  private grad(hash: number, x: number, y: number): number {
+    const h = hash & 15;
+    const u = h < 8 ? x : y;
+    const v = h < 4 ? y : h === 12 || h === 14 ? x : 0;
+    return ((h & 1) === 0 ? u : -u) + ((h & 2) === 0 ? v : -v);
+  }
+
+  noise(x: number, y: number): number {
+    const X = Math.floor(x) & 255;
+    const Y = Math.floor(y) & 255;
+    x -= Math.floor(x);
+    y -= Math.floor(y);
+    const u = this.fade(x);
+    const v = this.fade(y);
+    const a = this.permutation[X] + Y;
+    const aa = this.permutation[a];
+    const ab = this.permutation[a + 1];
+    const b = this.permutation[X + 1] + Y;
+    const ba = this.permutation[b];
+    const bb = this.permutation[b + 1];
+
+    return this.lerp(v,
+      this.lerp(u, this.grad(this.permutation[aa], x, y), this.grad(this.permutation[ba], x - 1, y)),
+      this.lerp(u, this.grad(this.permutation[ab], x, y - 1), this.grad(this.permutation[bb], x - 1, y - 1))
+    );
+  }
+}
+
+const perlin = new PerlinNoise(12345);
 
 // Helper to resolve current colors
 const getColors = (settings: VisualizerSettings) => {
@@ -9,12 +66,42 @@ const getColors = (settings: VisualizerSettings) => {
   return PALETTES[settings.palette].colors;
 };
 
+// Helper to convert HSL to RGB for color shifting
+const hslToRgb = (h: number, s: number, l: number): string => {
+  h = h / 360;
+  s = s / 100;
+  l = l / 100;
+  let r, g, b;
+  if (s === 0) {
+    r = g = b = l;
+  } else {
+    const hue2rgb = (p: number, q: number, t: number) => {
+      if (t < 0) t += 1;
+      if (t > 1) t -= 1;
+      if (t < 1/6) return p + (q - p) * 6 * t;
+      if (t < 1/2) return q;
+      if (t < 2/3) return p + (q - p) * (2/3 - t) * 6;
+      return p;
+    };
+    const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+    const p = 2 * l - q;
+    r = hue2rgb(p, q, h + 1/3);
+    g = hue2rgb(p, q, h);
+    b = hue2rgb(p, q, h - 1/3);
+  }
+  return `rgb(${Math.round(r * 255)}, ${Math.round(g * 255)}, ${Math.round(b * 255)})`;
+};
+
 // Particle System State
 let particles: Particle[] = [];
 let lastParticleMode: ParticleMode = ParticleMode.MIX; // Track mode changes
 let lastAspectRatio: AspectRatio | null = null; // Track ratio to reset particles
 
-// Helper to draw a star shape
+// ============================================================================
+// PARTICLE SHAPE DRAWING FUNCTIONS
+// ============================================================================
+
+// Draw a star shape
 const drawStar = (ctx: CanvasRenderingContext2D, cx: number, cy: number, spikes: number, outerRadius: number, innerRadius: number) => {
   let rot = Math.PI / 2 * 3;
   let x = cx;
@@ -39,12 +126,95 @@ const drawStar = (ctx: CanvasRenderingContext2D, cx: number, cy: number, spikes:
   ctx.fill();
 };
 
+// Draw a heart shape
+const drawHeart = (ctx: CanvasRenderingContext2D, cx: number, cy: number, size: number) => {
+  ctx.beginPath();
+  const topCurveHeight = size * 0.3;
+  ctx.moveTo(cx, cy + topCurveHeight);
+  // Left side
+  ctx.bezierCurveTo(
+    cx, cy,
+    cx - size / 2, cy,
+    cx - size / 2, cy + topCurveHeight
+  );
+  ctx.bezierCurveTo(
+    cx - size / 2, cy + (size + topCurveHeight) / 2,
+    cx, cy + (size + topCurveHeight) / 1.2,
+    cx, cy + size
+  );
+  // Right side
+  ctx.bezierCurveTo(
+    cx, cy + (size + topCurveHeight) / 1.2,
+    cx + size / 2, cy + (size + topCurveHeight) / 2,
+    cx + size / 2, cy + topCurveHeight
+  );
+  ctx.bezierCurveTo(
+    cx + size / 2, cy,
+    cx, cy,
+    cx, cy + topCurveHeight
+  );
+  ctx.closePath();
+  ctx.fill();
+};
+
+// Draw a music note
+const drawMusicNote = (ctx: CanvasRenderingContext2D, cx: number, cy: number, size: number) => {
+  ctx.beginPath();
+  // Note head
+  ctx.ellipse(cx, cy + size * 0.6, size * 0.3, size * 0.25, 0.3, 0, Math.PI * 2);
+  ctx.fill();
+  // Stem
+  ctx.fillRect(cx + size * 0.2, cy - size * 0.4, size * 0.1, size);
+  // Flag
+  ctx.beginPath();
+  ctx.moveTo(cx + size * 0.3, cy - size * 0.4);
+  ctx.quadraticCurveTo(cx + size * 0.6, cy - size * 0.2, cx + size * 0.3, cy);
+  ctx.fill();
+};
+
+// Draw a ring
+const drawRing = (ctx: CanvasRenderingContext2D, cx: number, cy: number, radius: number, thickness: number) => {
+  ctx.beginPath();
+  ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+  ctx.lineWidth = thickness;
+  ctx.stroke();
+};
+
+// Draw a spark (lightning bolt)
+const drawSpark = (ctx: CanvasRenderingContext2D, cx: number, cy: number, size: number) => {
+  ctx.beginPath();
+  ctx.moveTo(cx, cy - size);
+  ctx.lineTo(cx - size * 0.3, cy);
+  ctx.lineTo(cx + size * 0.1, cy);
+  ctx.lineTo(cx - size * 0.2, cy + size);
+  ctx.lineTo(cx + size * 0.4, cy - size * 0.2);
+  ctx.lineTo(cx - size * 0.1, cy - size * 0.2);
+  ctx.closePath();
+  ctx.fill();
+};
+
 const resolveParticleType = (mode: ParticleMode): ParticleType => {
   if (mode === ParticleMode.ORBS) return ParticleType.ORB;
   if (mode === ParticleMode.STARS) return ParticleType.STAR;
   if (mode === ParticleMode.DUST) return ParticleType.DUST;
-  
-  // Mix Mode: mostly dust, some orbs, few stars
+  if (mode === ParticleMode.RINGS) return ParticleType.RING;
+  if (mode === ParticleMode.HEARTS) return ParticleType.HEART;
+  if (mode === ParticleMode.NOTES) return ParticleType.NOTE;
+  if (mode === ParticleMode.SPARKS) return ParticleType.SPARK;
+
+  // Premium Mix Mode: All particle types with balanced distribution
+  if (mode === ParticleMode.PREMIUM_MIX) {
+    const r = Math.random();
+    if (r < 0.15) return ParticleType.STAR;
+    if (r < 0.30) return ParticleType.ORB;
+    if (r < 0.40) return ParticleType.RING;
+    if (r < 0.50) return ParticleType.HEART;
+    if (r < 0.60) return ParticleType.NOTE;
+    if (r < 0.70) return ParticleType.SPARK;
+    return ParticleType.DUST;
+  }
+
+  // Standard Mix Mode: mostly dust, some orbs, few stars
   const r = Math.random();
   if (r < 0.1) return ParticleType.STAR;
   if (r < 0.35) return ParticleType.ORB;
@@ -93,13 +263,25 @@ const updateAndDrawParticles = (ctx: CanvasRenderingContext2D, audioData: AudioD
     let baseSize = 0;
     let speedY = 0;
 
-    if (type === ParticleType.STAR) { 
+    if (type === ParticleType.STAR) {
         baseSize = 4 + depth * 8;  // 4px to 12px
         speedY = 1 + depth * 4;    // Faster
-    } else if (type === ParticleType.ORB) { 
+    } else if (type === ParticleType.ORB) {
         baseSize = 5 + depth * 20; // 5px to 25px
-        speedY = 1.5 + depth * 3; 
-    } else { 
+        speedY = 1.5 + depth * 3;
+    } else if (type === ParticleType.RING) {
+        baseSize = 6 + depth * 15; // 6px to 21px
+        speedY = 1.2 + depth * 3.5;
+    } else if (type === ParticleType.HEART) {
+        baseSize = 6 + depth * 12; // 6px to 18px
+        speedY = 1.0 + depth * 3;
+    } else if (type === ParticleType.NOTE) {
+        baseSize = 7 + depth * 14; // 7px to 21px
+        speedY = 1.3 + depth * 3.2;
+    } else if (type === ParticleType.SPARK) {
+        baseSize = 5 + depth * 10; // 5px to 15px
+        speedY = 2 + depth * 5;    // Very fast
+    } else {
         // Dust
         baseSize = 1 + depth * 3;  // Small
         speedY = 0.5 + depth * 2;  // Slow floating
@@ -107,21 +289,24 @@ const updateAndDrawParticles = (ctx: CanvasRenderingContext2D, audioData: AudioD
 
     particles.push({
         x: Math.random() * width,
-        y: height + 10 + (Math.random() * 50), 
-        vx: (Math.random() - 0.5) * 0.5, 
-        vy: -speedY, 
+        y: height + 10 + (Math.random() * 50),
+        vx: (Math.random() - 0.5) * 0.5,
+        vy: -speedY,
         size: baseSize,
         baseSize: baseSize,
-        targetSize: baseSize, // Initialize target
-        alpha: 0, 
-        life: 1.0, 
+        targetSize: baseSize,
+        alpha: 0,
+        life: 1.0,
         color: colors[Math.floor(Math.random() * colors.length)],
         type: type,
         rotation: Math.random() * Math.PI * 2,
         rotationSpeed: (Math.random() - 0.5) * 0.05,
         wobble: Math.random() * Math.PI * 2,
-        pulsePhase: Math.random() * Math.PI * 2, // Random start point in breathing cycle
-        pulseSpeed: 0.02 + Math.random() * 0.04   // Unique breathing speed
+        pulsePhase: Math.random() * Math.PI * 2,
+        pulseSpeed: 0.02 + Math.random() * 0.04,
+        trail: [], // Initialize empty trail
+        hue: Math.random() * 360, // Random starting hue for color shifting
+        hueSpeed: 0.5 + Math.random() * 1.5 // Hue shift speed
     });
   }
 
@@ -155,11 +340,33 @@ const updateAndDrawParticles = (ctx: CanvasRenderingContext2D, audioData: AudioD
     // 4. Position Update with Fluidity
     p.wobble += 0.02;
     // Smaller particles (Dust) drift more chaotically, larger ones have more inertia
-    const driftIntensity = (30 / p.baseSize) * 0.5; 
-    
-    p.x += p.vx + Math.sin(p.wobble + p.y * 0.005) * driftIntensity; 
+    const driftIntensity = (30 / p.baseSize) * 0.5;
+
+    // Trail Management
+    if (settings.particleTrails) {
+      p.trail.push({ x: p.x, y: p.y, alpha: p.alpha * 0.5 });
+      if (p.trail.length > 10) p.trail.shift(); // Keep last 10 positions
+      // Fade out trail
+      p.trail.forEach(t => t.alpha *= 0.9);
+    } else {
+      p.trail = []; // Clear trails if disabled
+    }
+
+    // Gravity effect
+    if (settings.particleGravity) {
+      p.vy += 0.05; // Add downward acceleration
+    }
+
+    p.x += p.vx + Math.sin(p.wobble + p.y * 0.005) * driftIntensity;
     p.y += p.vy * speedModifier;
     p.rotation += p.rotationSpeed * speedModifier;
+
+    // Color shifting based on audio
+    if (settings.particleColorShift) {
+      p.hue += p.hueSpeed * (1 + audioData.mid / 255);
+      if (p.hue > 360) p.hue -= 360;
+      p.color = hslToRgb(p.hue, 80, 60);
+    }
 
     // 5. Alpha/Lifecycle
     // Fade in at bottom
@@ -182,33 +389,85 @@ const updateAndDrawParticles = (ctx: CanvasRenderingContext2D, audioData: AudioD
         continue;
     }
 
-    // --- RENDER ---
+    // --- RENDER TRAIL FIRST (behind particle) ---
+    if (settings.particleTrails && p.trail.length > 0) {
+      for (let j = 0; j < p.trail.length; j++) {
+        const t = p.trail[j];
+        ctx.globalAlpha = t.alpha;
+        ctx.fillStyle = p.color;
+        ctx.beginPath();
+        ctx.arc(t.x, t.y, p.size * 0.3, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    // --- RENDER MAIN PARTICLE ---
     ctx.globalAlpha = renderAlpha;
 
     if (p.type === ParticleType.ORB) {
-        // Soft Glow
-        ctx.shadowBlur = p.size; 
+        ctx.shadowBlur = p.size;
         ctx.shadowColor = p.color;
         ctx.fillStyle = p.color;
-        
         ctx.beginPath();
-        ctx.arc(p.x, p.y, p.size * 0.6, 0, Math.PI * 2); 
+        ctx.arc(p.x, p.y, p.size * 0.6, 0, Math.PI * 2);
         ctx.fill();
         ctx.shadowBlur = 0;
-        
+
     } else if (p.type === ParticleType.STAR) {
-        // Sharp Sparkle
         ctx.shadowBlur = p.size * 0.5;
         ctx.shadowColor = p.color;
         ctx.fillStyle = p.color;
-        
         ctx.save();
         ctx.translate(p.x, p.y);
         ctx.rotate(p.rotation);
         drawStar(ctx, 0, 0, 4, p.size, p.size * 0.25);
         ctx.restore();
         ctx.shadowBlur = 0;
-        
+
+    } else if (p.type === ParticleType.RING) {
+        ctx.shadowBlur = p.size * 0.4;
+        ctx.shadowColor = p.color;
+        ctx.strokeStyle = p.color;
+        ctx.lineWidth = p.size * 0.2;
+        drawRing(ctx, p.x, p.y, p.size * 0.5, p.size * 0.2);
+        ctx.shadowBlur = 0;
+
+    } else if (p.type === ParticleType.HEART) {
+        ctx.shadowBlur = p.size * 0.6;
+        ctx.shadowColor = p.color;
+        ctx.fillStyle = p.color;
+        ctx.save();
+        ctx.translate(p.x, p.y);
+        ctx.rotate(p.rotation);
+        ctx.translate(-p.x, -p.y);
+        drawHeart(ctx, p.x, p.y - p.size * 0.4, p.size);
+        ctx.restore();
+        ctx.shadowBlur = 0;
+
+    } else if (p.type === ParticleType.NOTE) {
+        ctx.shadowBlur = p.size * 0.5;
+        ctx.shadowColor = p.color;
+        ctx.fillStyle = p.color;
+        ctx.save();
+        ctx.translate(p.x, p.y);
+        ctx.rotate(p.rotation);
+        ctx.translate(-p.x, -p.y);
+        drawMusicNote(ctx, p.x, p.y, p.size);
+        ctx.restore();
+        ctx.shadowBlur = 0;
+
+    } else if (p.type === ParticleType.SPARK) {
+        ctx.shadowBlur = p.size;
+        ctx.shadowColor = p.color;
+        ctx.fillStyle = p.color;
+        ctx.save();
+        ctx.translate(p.x, p.y);
+        ctx.rotate(p.rotation);
+        ctx.translate(-p.x, -p.y);
+        drawSpark(ctx, p.x, p.y, p.size);
+        ctx.restore();
+        ctx.shadowBlur = 0;
+
     } else {
         // Dust - slightly translucent center
         ctx.fillStyle = p.color;
@@ -228,11 +487,157 @@ const drawVignette = (ctx: CanvasRenderingContext2D, width: number, height: numb
         width / 2, height / 2, height
     );
     gradient.addColorStop(0, 'rgba(0,0,0,0)');
-    gradient.addColorStop(1, 'rgba(0,0,0,0.8)'); // Slightly darker edges for cinema look
+    gradient.addColorStop(1, 'rgba(0,0,0,0.8)');
 
     ctx.fillStyle = gradient;
     ctx.fillRect(0, 0, width, height);
 };
+
+// ============================================================================
+// POST-PROCESSING EFFECTS
+// ============================================================================
+
+// Chromatic Aberration Effect
+const applyChromaticAberration = (ctx: CanvasRenderingContext2D, width: number, height: number, intensity: number) => {
+  const imageData = ctx.getImageData(0, 0, width, height);
+  const data = imageData.data;
+  const offset = Math.floor(intensity);
+
+  // Create temporary canvas for each color channel
+  const tempCanvas = document.createElement('canvas');
+  tempCanvas.width = width;
+  tempCanvas.height = height;
+  const tempCtx = tempCanvas.getContext('2d')!;
+  tempCtx.putImageData(imageData, 0, 0);
+
+  // Clear and redraw with offset channels
+  ctx.clearRect(0, 0, width, height);
+
+  // Red channel (shifted right)
+  ctx.globalCompositeOperation = 'screen';
+  ctx.globalAlpha = 0.8;
+  ctx.drawImage(tempCanvas, offset, 0);
+
+  // Green channel (no shift)
+  ctx.drawImage(tempCanvas, 0, 0);
+
+  // Blue channel (shifted left)
+  ctx.drawImage(tempCanvas, -offset, 0);
+
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.globalAlpha = 1.0;
+};
+
+// Scanlines Effect (CRT/TV look)
+const applyScanlines = (ctx: CanvasRenderingContext2D, width: number, height: number, intensity: number) => {
+  ctx.globalAlpha = intensity * 0.3;
+  ctx.fillStyle = '#000000';
+  for (let y = 0; y < height; y += 4) {
+    ctx.fillRect(0, y, width, 2);
+  }
+  ctx.globalAlpha = 1.0;
+};
+
+// CRT Effect (combines scanlines with curvature simulation via vignette)
+const applyCRTEffect = (ctx: CanvasRenderingContext2D, width: number, height: number) => {
+  applyScanlines(ctx, width, height, 0.5);
+
+  // RGB separation for CRT look
+  const tempCanvas = document.createElement('canvas');
+  tempCanvas.width = width;
+  tempCanvas.height = height;
+  const tempCtx = tempCanvas.getContext('2d')!;
+  tempCtx.drawImage(ctx.canvas, 0, 0);
+
+  ctx.globalCompositeOperation = 'screen';
+  ctx.globalAlpha = 0.1;
+  ctx.drawImage(tempCanvas, 2, 0);
+  ctx.drawImage(tempCanvas, -2, 0);
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.globalAlpha = 1.0;
+
+  // Screen flicker
+  const flicker = 0.95 + Math.random() * 0.05;
+  ctx.globalAlpha = flicker;
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.03)';
+  ctx.fillRect(0, 0, width, height);
+  ctx.globalAlpha = 1.0;
+};
+
+// Motion Blur Effect
+const applyMotionBlur = (ctx: CanvasRenderingContext2D, width: number, height: number, intensity: number) => {
+  ctx.globalAlpha = 1 - intensity;
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.fillStyle = `rgba(0, 0, 0, ${intensity * 0.3})`;
+  ctx.fillRect(0, 0, width, height);
+  ctx.globalAlpha = 1.0;
+};
+
+// Frequency Analyzer Overlay
+const drawFrequencyBars = (ctx: CanvasRenderingContext2D, audioData: AudioData, settings: VisualizerSettings, width: number, height: number) => {
+  const barCount = 64;
+  const barWidth = width / barCount;
+  const data = audioData.frequencyData;
+  const step = Math.floor(data.length / barCount);
+  const colors = getColors(settings);
+
+  ctx.save();
+  ctx.globalAlpha = 0.6;
+  ctx.fillStyle = colors[0];
+
+  for (let i = 0; i < barCount; i++) {
+    const value = data[i * step];
+    const barHeight = (value / 255) * (height * 0.15); // Max 15% of screen height
+    const x = i * barWidth;
+    const y = height - barHeight;
+
+    // Gradient per bar
+    const gradient = ctx.createLinearGradient(0, y, 0, height);
+    gradient.addColorStop(0, colors[0]);
+    gradient.addColorStop(1, colors[1]);
+    ctx.fillStyle = gradient;
+
+    ctx.fillRect(x, y, barWidth - 2, barHeight);
+  }
+
+  ctx.restore();
+};
+
+// ============================================================================
+// KALEIDOSCOPE WRAPPER
+// ============================================================================
+const applyKaleidoscope = (
+  ctx: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  segments: number,
+  drawFunc: () => void
+) => {
+  ctx.save();
+  ctx.translate(width / 2, height / 2);
+
+  const angleStep = (Math.PI * 2) / segments;
+
+  for (let i = 0; i < segments; i++) {
+    ctx.save();
+    ctx.rotate(angleStep * i);
+
+    // Mirror every other segment for kaleidoscope effect
+    if (i % 2 === 1) {
+      ctx.scale(-1, 1);
+    }
+
+    ctx.translate(-width / 2, -height / 2);
+    drawFunc();
+    ctx.restore();
+  }
+
+  ctx.restore();
+};
+
+// ============================================================================
+// VISUALIZATION STYLES
+// ============================================================================
 
 // Style A: Circular Neon Pulse (Symmetrical)
 const drawCircularNeon = (
@@ -306,8 +711,15 @@ const drawCircularNeon = (
 
   for (let i = 0; i < halfPoints; i++) {
     const value = data[i * step] * settings.sensitivity;
-    const spikeHeight = Math.pow(value / 255, 2.0) * maxSpikeHeight; 
-    
+    let spikeHeight = Math.pow(value / 255, 2.0) * maxSpikeHeight;
+
+    // Perlin Noise Displacement for organic movement
+    if (settings.enablePerlinNoise) {
+      const time = performance.now() / 1000;
+      const noiseValue = perlin.noise(i * 0.1, time) * 20;
+      spikeHeight += noiseValue;
+    }
+
     ctx.strokeStyle = colors[Math.floor((i / halfPoints) * colors.length) % colors.length];
 
     const angleRight = -Math.PI / 2 + (i / halfPoints) * Math.PI;
@@ -358,12 +770,19 @@ const drawMirroredFloor = (
 
   for (let i = 0; i < barCount; i++) {
     const value = data[i * dataStep] * settings.sensitivity;
-    const barHeight = Math.max(5, Math.pow(value / 255, 2) * (height * 0.5)); // Dynamic height based on canvas height
-    
+    let barHeight = Math.max(5, Math.pow(value / 255, 2) * (height * 0.5));
+
+    // Perlin Noise Displacement
+    if (settings.enablePerlinNoise) {
+      const time = performance.now() / 1000;
+      const noiseValue = perlin.noise(i * 0.2, time) * 30;
+      barHeight += noiseValue;
+    }
+
     const totalWidth = barCount * (barWidth + spacing);
     const startX = (width - totalWidth) / 2;
     const x = startX + i * (barWidth + spacing);
-    
+
     // Position 10% from bottom
     const y = height - (height * 0.1); 
 
@@ -410,14 +829,21 @@ const drawReactiveWave = (
 
   for (let i = 0; i < waveData.length; i++) {
     const v = waveData[i] / 128.0;
-    const y = (v * height) / 2; 
-    
+    let y = (v * height) / 2;
+
     const bassOffset = (audioData.bass / 255) * settings.sensitivity * 60 * Math.sin(i * 0.1);
+
+    // Perlin Noise Displacement
+    if (settings.enablePerlinNoise) {
+      const time = performance.now() / 1000;
+      const noiseValue = perlin.noise(i * 0.05, time) * 20;
+      y += noiseValue;
+    }
 
     if (i === 0) {
       ctx.moveTo(x, y);
     } else {
-      ctx.lineTo(x, y + bassOffset); 
+      ctx.lineTo(x, y + bassOffset);
     }
     x += sliceWidth;
   }
@@ -479,33 +905,103 @@ export const renderFrame = (
 
   // 2. Prepare Context for Visuals
   ctx.save();
-  
-  // SMOOTH CAMERA SHAKE
-  if (settings.enableBassShake && audioData.bass > 130) {
-    const time = performance.now() / 50; 
-    const shakeIntensity = ((audioData.bass - 130) / 125) * 20 * settings.sensitivity;
-    
-    // Smooth, cinematic sway with multiple sine waves
-    const dx = Math.sin(time) * shakeIntensity * 0.7 + Math.sin(time * 1.5) * shakeIntensity * 0.3;
-    const dy = Math.cos(time * 0.8) * shakeIntensity * 0.7 + Math.cos(time * 1.2) * shakeIntensity * 0.3;
-    
-    ctx.translate(dx, dy);
+
+  // ============================================================================
+  // PREMIUM CAMERA SHAKE with Perlin Noise & Multiple Modes
+  // ============================================================================
+  if (settings.enableBassShake && settings.cameraShakeMode !== CameraShakeMode.OFF && audioData.bass > 100) {
+    const time = performance.now() / 1000;
+    let shakeIntensity = ((audioData.bass - 100) / 155) * settings.sensitivity;
+
+    // Mode-specific intensity multipliers
+    let intensityMultiplier = 1.0;
+    let rotationMultiplier = 0;
+
+    switch (settings.cameraShakeMode) {
+      case CameraShakeMode.SUBTLE:
+        intensityMultiplier = 0.3;
+        rotationMultiplier = 0.0005;
+        break;
+      case CameraShakeMode.MEDIUM:
+        intensityMultiplier = 1.0;
+        rotationMultiplier = 0.001;
+        break;
+      case CameraShakeMode.INTENSE:
+        intensityMultiplier = 2.0;
+        rotationMultiplier = 0.002;
+        break;
+      case CameraShakeMode.EARTHQUAKE:
+        intensityMultiplier = 4.0;
+        rotationMultiplier = 0.005;
+        break;
+    }
+
+    shakeIntensity *= intensityMultiplier;
+
+    // Perlin Noise for organic movement (more cinematic than pure sine waves)
+    const noiseX = perlin.noise(time * 2, 0) * 30 * shakeIntensity;
+    const noiseY = perlin.noise(0, time * 2) * 30 * shakeIntensity;
+
+    // Layered sine waves for additional complexity
+    const sineX = Math.sin(time * 3) * 10 * shakeIntensity * 0.5;
+    const sineY = Math.cos(time * 2.5) * 10 * shakeIntensity * 0.5;
+
+    const dx = noiseX + sineX;
+    const dy = noiseY + sineY;
+
+    // Translation
+    ctx.translate(width / 2, height / 2);
+
+    // Rotation shake (optional)
+    if (settings.shakeRotation) {
+      const rotation = perlin.noise(time * 1.5, time * 1.5) * rotationMultiplier * shakeIntensity;
+      ctx.rotate(rotation);
+    }
+
+    ctx.translate(-width / 2 + dx, -height / 2 + dy);
   }
 
   // --- LAYER ORDER: PARTICLES FIRST (BEHIND) ---
   updateAndDrawParticles(ctx, audioData, settings, width, height);
 
-  // --- MAIN VISUALIZER ---
-  if (settings.style === VisualizerStyle.CIRCULAR_NEON) {
-    drawCircularNeon(ctx, audioData.frequencyData, audioData, settings, centerImage, width, height);
-  } else if (settings.style === VisualizerStyle.MIRRORED_FLOOR) {
-    drawMirroredFloor(ctx, audioData.frequencyData, audioData, settings, width, height);
-  } else if (settings.style === VisualizerStyle.REACTIVE_WAVE) {
-    drawReactiveWave(ctx, audioData.waveData, audioData, settings, width, height);
+  // --- MAIN VISUALIZER (with optional Kaleidoscope) ---
+  const renderVisualizer = () => {
+    if (settings.style === VisualizerStyle.CIRCULAR_NEON) {
+      drawCircularNeon(ctx, audioData.frequencyData, audioData, settings, centerImage, width, height);
+    } else if (settings.style === VisualizerStyle.MIRRORED_FLOOR) {
+      drawMirroredFloor(ctx, audioData.frequencyData, audioData, settings, width, height);
+    } else if (settings.style === VisualizerStyle.REACTIVE_WAVE) {
+      drawReactiveWave(ctx, audioData.waveData, audioData, settings, width, height);
+    }
+  };
+
+  if (settings.enableKaleidoscope) {
+    applyKaleidoscope(ctx, width, height, settings.kaleidoscopeSegments, renderVisualizer);
+  } else {
+    renderVisualizer();
   }
 
   ctx.restore(); // End Camera Shake context
 
-  // 3. Cinematic Vignette (On top)
+  // 3. Frequency Analyzer Overlay (optional)
+  if (settings.showFrequencyBars) {
+    drawFrequencyBars(ctx, audioData, settings, width, height);
+  }
+
+  // 4. Post-Processing Effects
+  if (settings.postProcessEffects.includes(PostProcessEffect.CHROMATIC_ABERRATION)) {
+    applyChromaticAberration(ctx, width, height, settings.chromaticAberrationIntensity);
+  }
+  if (settings.postProcessEffects.includes(PostProcessEffect.SCANLINES)) {
+    applyScanlines(ctx, width, height, settings.scanlineIntensity);
+  }
+  if (settings.postProcessEffects.includes(PostProcessEffect.CRT)) {
+    applyCRTEffect(ctx, width, height);
+  }
+  if (settings.postProcessEffects.includes(PostProcessEffect.MOTION_BLUR)) {
+    applyMotionBlur(ctx, width, height, settings.motionBlurIntensity);
+  }
+
+  // 5. Cinematic Vignette (On top)
   drawVignette(ctx, width, height);
 };
