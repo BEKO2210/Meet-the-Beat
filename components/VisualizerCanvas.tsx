@@ -206,13 +206,17 @@ const VisualizerCanvas: React.FC<Props> = ({
   }, [isPlaying]);
 
   const animate = () => {
+    // FIXED: Don't continue animation loop if refs are not ready
     if (!canvasRef.current || !analyserRef.current) {
-        requestRef.current = requestAnimationFrame(animate);
-        return;
+        return; // Stop animation loop instead of continuing endlessly
     }
-    
+
     const ctx = canvasRef.current.getContext('2d');
-    if (!ctx) return;
+    if (!ctx) {
+      // FIXED: Schedule next frame even if ctx is null temporarily
+      requestRef.current = requestAnimationFrame(animate);
+      return;
+    }
 
     // Data buffers
     const bufferLength = analyserRef.current.frequencyBinCount;

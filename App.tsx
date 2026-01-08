@@ -63,6 +63,10 @@ const App: React.FC = () => {
   const audioElementRef = useRef<HTMLAudioElement | null>(null); // NEW: For audio stream
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
+  // FIXED: Store recording resources for proper cleanup
+  const recordingAudioRef = useRef<HTMLAudioElement | null>(null);
+  const recordingAudioContextRef = useRef<AudioContext | null>(null);
+  const recordingStreamRef = useRef<MediaStream | null>(null);
 
   const handleAudioUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
@@ -94,6 +98,24 @@ const App: React.FC = () => {
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
       mediaRecorderRef.current.stop();
     }
+
+    // FIXED: Proper cleanup of recording resources
+    if (recordingAudioRef.current) {
+      recordingAudioRef.current.pause();
+      recordingAudioRef.current.src = '';
+      recordingAudioRef.current = null;
+    }
+
+    if (recordingStreamRef.current) {
+      recordingStreamRef.current.getTracks().forEach(track => track.stop());
+      recordingStreamRef.current = null;
+    }
+
+    if (recordingAudioContextRef.current) {
+      recordingAudioContextRef.current.close();
+      recordingAudioContextRef.current = null;
+    }
+
     setIsRecording(false);
   };
 
@@ -135,16 +157,22 @@ const App: React.FC = () => {
     setRestartTrigger(prev => prev + 1);
     setCurrentTime(0);
 
+    // FIXED: Store blob URL for cleanup
+    let recordingAudioBlobUrl: string | null = null;
+
     try {
       // 1. Get Canvas Stream (Video)
       const canvasStream = canvasRef.current.captureStream(60);
       const videoTrack = canvasStream.getVideoTracks()[0];
 
       // 2. Create a SEPARATE audio element for recording (to avoid conflict with visualizer's AudioContext)
-      const recordingAudio = new Audio(URL.createObjectURL(audioFile));
+      recordingAudioBlobUrl = URL.createObjectURL(audioFile);
+      const recordingAudio = new Audio(recordingAudioBlobUrl);
+      recordingAudioRef.current = recordingAudio;
 
       // 3. Get Audio Stream from separate audio element
       const audioContext = new AudioContext();
+      recordingAudioContextRef.current = audioContext;
       const audioSource = audioContext.createMediaElementSource(recordingAudio);
       const audioDestination = audioContext.createMediaStreamDestination();
 
@@ -155,6 +183,7 @@ const App: React.FC = () => {
 
       // 4. Combine Video + Audio into one stream
       const combinedStream = new MediaStream([videoTrack, audioTrack]);
+      recordingStreamRef.current = combinedStream;
 
       // 5. Create MediaRecorder with combined stream
       const mimeType = MediaRecorder.isTypeSupported('video/webm; codecs=vp9,opus')
@@ -184,10 +213,23 @@ const App: React.FC = () => {
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
 
-        // Cleanup
-        recordingAudio.pause();
-        recordingAudio.src = '';
-        audioContext.close();
+        // FIXED: Cleanup with proper blob URL revocation
+        if (recordingAudioRef.current) {
+          recordingAudioRef.current.pause();
+          recordingAudioRef.current.src = '';
+          recordingAudioRef.current = null;
+        }
+        if (recordingAudioBlobUrl) {
+          URL.revokeObjectURL(recordingAudioBlobUrl);
+        }
+        if (recordingStreamRef.current) {
+          recordingStreamRef.current.getTracks().forEach(track => track.stop());
+          recordingStreamRef.current = null;
+        }
+        if (recordingAudioContextRef.current) {
+          recordingAudioContextRef.current.close();
+          recordingAudioContextRef.current = null;
+        }
       };
 
       mediaRecorderRef.current = recorder;
@@ -204,6 +246,11 @@ const App: React.FC = () => {
     } catch (error) {
       console.error('Recording Error:', error);
       alert('Fehler beim Starten der Aufnahme. Bitte versuchen Sie es erneut.');
+      // FIXED: Cleanup on error
+      if (recordingAudioBlobUrl) {
+        URL.revokeObjectURL(recordingAudioBlobUrl);
+      }
+      stopRecording(); // Clean up any partial state
     }
   };
 
