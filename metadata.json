@@ -1,0 +1,7 @@
+{
+  "name": "Meet the Beat",
+  "description": "A premium, browser-based music visualization suite. Generate high-quality, audio-reactive visuals with neon glows, particle systems, and cinematic camera shake effects directly in your browser.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
