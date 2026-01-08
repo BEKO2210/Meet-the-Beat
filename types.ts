@@ -27,14 +27,21 @@ export enum ParticleMode {
   DUST = 'DUST'
 }
 
+export enum AspectRatio {
+  LANDSCAPE = 'LANDSCAPE', // 16:9
+  PORTRAIT = 'PORTRAIT'    // 9:16
+}
+
 export interface VisualizerSettings {
   style: VisualizerStyle;
   palette: ColorPalette;
   customColors: [string, string, string]; // User selected colors
   
+  aspectRatio: AspectRatio; // New: Output format
+  
   enableParticles: boolean;
   particleMode: ParticleMode; // New: Selectable particle type
-  particleDensity: number; // 0.5 to 3.0 multiplier for quantity
+  particleDensity: number; // 0.1 to 3.0 multiplier for quantity
   particleSensitivity: number; // New: Specific sensitivity for particle beats
   particlesReactToBeat: boolean; // If true, explode on beat. If false, just ambient.
   
@@ -62,6 +69,11 @@ export interface Particle {
   rotation: number;     // For stars
   rotationSpeed: number;
   wobble: number;       // For organic movement phase
+  
+  // New organic props
+  pulsePhase: number;   // Current phase in the breathing cycle (0-2PI)
+  pulseSpeed: number;   // How fast this specific particle breathes
+  targetSize: number;   // For smooth interpolation during bass hits
 }
 
 export interface AudioData {

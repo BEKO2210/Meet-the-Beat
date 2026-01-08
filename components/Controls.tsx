@@ -1,5 +1,5 @@
 import React from 'react';
-import { VisualizerSettings, VisualizerStyle, ColorPalette, ParticleMode } from '../types';
+import { VisualizerSettings, VisualizerStyle, ColorPalette, ParticleMode, AspectRatio } from '../types';
 import { PALETTES } from '../constants';
 import { Play, Pause, Square, Upload, Video, Music, Image as ImageIcon, CircleDot } from 'lucide-react';
 
@@ -163,6 +163,16 @@ const Controls: React.FC<Props> = ({
         <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-widest">Visual Configuration</h2>
 
         <div>
+          <label className="block text-sm mb-2 text-gray-400">Output Format</label>
+          <select 
+            value={settings.aspectRatio}
+            onChange={(e) => updateSettings({ aspectRatio: e.target.value as AspectRatio })}
+            className="w-full bg-gray-800 text-white border border-gray-700 rounded-md p-2.5 focus:ring-2 focus:ring-pink-500 focus:border-transparent outline-none mb-3"
+          >
+            <option value={AspectRatio.LANDSCAPE}>Landscape (16:9) - YouTube</option>
+            <option value={AspectRatio.PORTRAIT}>Portrait (9:16) - TikTok / Reels</option>
+          </select>
+
           <label className="block text-sm mb-2 text-gray-400">Visualization Style</label>
           <select 
             value={settings.style}
@@ -262,7 +272,7 @@ const Controls: React.FC<Props> = ({
               <span className="text-gray-400">{settings.particleDensity.toFixed(1)}x</span>
             </div>
             <input 
-              type="range" min="0.5" max="3.0" step="0.1" 
+              type="range" min="0.1" max="3.0" step="0.1" 
               value={settings.particleDensity}
               onChange={(e) => updateSettings({ particleDensity: parseFloat(e.target.value) })}
               className="w-full h-1 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-pink-500"

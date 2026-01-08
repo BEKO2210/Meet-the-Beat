@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useRef } from 'react';
 import VisualizerCanvas from './components/VisualizerCanvas';
 import Controls from './components/Controls';
-import { VisualizerSettings, VisualizerStyle, ColorPalette, ParticleMode } from './types';
+import { VisualizerSettings, VisualizerStyle, ColorPalette, ParticleMode, AspectRatio } from './types';
 
 const App: React.FC = () => {
   const [audioFile, setAudioFile] = useState<File | null>(null);
@@ -20,6 +20,7 @@ const App: React.FC = () => {
     style: VisualizerStyle.CIRCULAR_NEON,
     palette: ColorPalette.CYAN_MAGENTA,
     customColors: ['#ff0055', '#00f3ff', '#ffffff'], 
+    aspectRatio: AspectRatio.LANDSCAPE, // Default 16:9
     enableParticles: true,
     particleMode: ParticleMode.MIX, // Default to Mix
     particleDensity: 1.0,
@@ -154,7 +155,7 @@ const App: React.FC = () => {
   return (
     <div className="flex flex-col md:flex-row h-screen w-full bg-black overflow-hidden font-sans">
       <div className="flex-1 flex flex-col relative bg-[#0a0a0a]">
-        <div className="flex-1 flex items-center justify-center p-4 md:p-8 lg:p-12">
+        <div className="flex-1 flex items-center justify-center p-4 md:p-8 lg:p-12 overflow-hidden">
           <VisualizerCanvas 
             audioFile={audioFile}
             bgImageFile={bgFile}

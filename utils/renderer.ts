@@ -1,5 +1,5 @@
-import { VisualizerSettings, VisualizerStyle, AudioData, Particle, ColorPalette, ParticleType, ParticleMode } from '../types';
-import { PALETTES, CANVAS_WIDTH, CANVAS_HEIGHT } from '../constants';
+import { VisualizerSettings, VisualizerStyle, AudioData, Particle, ColorPalette, ParticleType, ParticleMode, AspectRatio } from '../types';
+import { PALETTES } from '../constants';
 
 // Helper to resolve current colors
 const getColors = (settings: VisualizerSettings) => {
@@ -11,6 +11,8 @@ const getColors = (settings: VisualizerSettings) => {
 
 // Particle System State
 let particles: Particle[] = [];
+let lastParticleMode: ParticleMode = ParticleMode.MIX; // Track mode changes
+let lastAspectRatio: AspectRatio | null = null; // Track ratio to reset particles
 
 // Helper to draw a star shape
 const drawStar = (ctx: CanvasRenderingContext2D, cx: number, cy: number, spikes: number, outerRadius: number, innerRadius: number) => {
@@ -49,18 +51,24 @@ const resolveParticleType = (mode: ParticleMode): ParticleType => {
   return ParticleType.DUST;
 };
 
-const updateAndDrawParticles = (ctx: CanvasRenderingContext2D, audioData: AudioData, settings: VisualizerSettings) => {
+const updateAndDrawParticles = (ctx: CanvasRenderingContext2D, audioData: AudioData, settings: VisualizerSettings, width: number, height: number) => {
+  // Clear particles immediately if disabled
   if (!settings.enableParticles) {
     particles = [];
     return;
+  }
+
+  // DETECT MODE OR RESOLUTION CHANGE: Clear particles to avoid glitches (e.g. half screen particles)
+  if (settings.particleMode !== lastParticleMode || settings.aspectRatio !== lastAspectRatio) {
+      particles = [];
+      lastParticleMode = settings.particleMode;
+      lastAspectRatio = settings.aspectRatio;
   }
 
   const colors = getColors(settings);
   const densityMultiplier = settings.particleDensity;
   
   // Threshold for "Beat Hit"
-  // Using specific particleSensitivity from settings
-  // Higher sensitivity = detection at lower bass volumes
   const isBassHit = audioData.bass > (125 / settings.particleSensitivity);
 
   // --- SPAWNING LOGIC (Bottom Up Only) ---
@@ -79,7 +87,6 @@ const updateAndDrawParticles = (ctx: CanvasRenderingContext2D, audioData: AudioD
     const type = resolveParticleType(settings.particleMode);
     
     // Depth Simulation (0 = Far/Background, 1 = Close/Foreground)
-    // This makes the scene look 3D.
     const depth = Math.random(); 
     
     // Size and Speed depend on Depth
@@ -87,71 +94,87 @@ const updateAndDrawParticles = (ctx: CanvasRenderingContext2D, audioData: AudioD
     let speedY = 0;
 
     if (type === ParticleType.STAR) { 
-        baseSize = 2 + depth * 6;  // 2px to 8px
+        baseSize = 4 + depth * 8;  // 4px to 12px
         speedY = 1 + depth * 4;    // Faster
     } else if (type === ParticleType.ORB) { 
-        baseSize = 3 + depth * 12; // 3px to 15px (Soft large bokeh)
+        baseSize = 5 + depth * 20; // 5px to 25px
         speedY = 1.5 + depth * 3; 
     } else { 
         // Dust
-        baseSize = 1 + depth * 2;  // Small
+        baseSize = 1 + depth * 3;  // Small
         speedY = 0.5 + depth * 2;  // Slow floating
     }
 
     particles.push({
-        x: Math.random() * CANVAS_WIDTH,
-        // Spawn slightly below canvas
-        y: CANVAS_HEIGHT + 10 + (Math.random() * 50), 
-        vx: (Math.random() - 0.5) * 0.5, // Subtle horizontal drift
-        vy: -speedY, // Always moving up
+        x: Math.random() * width,
+        y: height + 10 + (Math.random() * 50), 
+        vx: (Math.random() - 0.5) * 0.5, 
+        vy: -speedY, 
         size: baseSize,
         baseSize: baseSize,
-        alpha: 0, // Start invisible, fade in
+        targetSize: baseSize, // Initialize target
+        alpha: 0, 
         life: 1.0, 
         color: colors[Math.floor(Math.random() * colors.length)],
         type: type,
         rotation: Math.random() * Math.PI * 2,
         rotationSpeed: (Math.random() - 0.5) * 0.05,
-        wobble: Math.random() * Math.PI * 2 // Phase for sine wave movement
+        wobble: Math.random() * Math.PI * 2,
+        pulsePhase: Math.random() * Math.PI * 2, // Random start point in breathing cycle
+        pulseSpeed: 0.02 + Math.random() * 0.04   // Unique breathing speed
     });
   }
 
   // --- UPDATE & DRAW ---
-  // 'screen' mode blends colors additively but softer than 'lighter', perfect for premium glow
   ctx.globalCompositeOperation = 'screen'; 
 
   for (let i = particles.length - 1; i >= 0; i--) {
     const p = particles[i];
 
-    // --- BASS REACTION: TIME WARP ---
-    // User request: "slower when bass comes"
-    // This creates a "matrix" or "heavy impact" feel where gravity seems to increase
-    let speedModifier = 1.0;
+    // --- ORGANIC MOVEMENT & BREATHING ---
     
-    if (isBassHit && settings.particlesReactToBeat) {
-        speedModifier = 0.2; // Slow down to 20% speed (Slow Motion)
-        p.size = p.baseSize * 1.3; // Slight pulse in size to show energy
-    } else {
-        // Smoothly return to normal size
-        p.size = p.size * 0.9 + p.baseSize * 0.1;
-    }
+    // 1. Bass Reaction (Time Warp + Swell)
+    let speedModifier = 1.0;
+    let beatScaleToAdd = 0;
 
-    // Move
+    if (isBassHit && settings.particlesReactToBeat) {
+        speedModifier = 0.2; // Slow down (Time Stop effect)
+        beatScaleToAdd = p.baseSize * 0.5; // Target size increases
+    } 
+    
+    // 2. Continuous Breathing (Lifecycle Variation)
+    // Particles expand and contract slightly over time independently of the beat
+    p.pulsePhase += p.pulseSpeed;
+    const breathingFactor = Math.sin(p.pulsePhase) * 0.15; // +/- 15% size variation
+    
+    // 3. Smooth Size Interpolation
+    // Instead of snapping size, we lerp towards target
+    const targetSize = p.baseSize * (1 + breathingFactor) + beatScaleToAdd;
+    p.size += (targetSize - p.size) * 0.1; // Smooth ease-in/out for size
+
+    // 4. Position Update with Fluidity
     p.wobble += 0.02;
-    // Add sine wave drift based on depth (closer particles wobble more)
-    p.x += p.vx + Math.sin(p.wobble + p.y * 0.005) * (0.3 * (p.baseSize / 5)); 
+    // Smaller particles (Dust) drift more chaotically, larger ones have more inertia
+    const driftIntensity = (30 / p.baseSize) * 0.5; 
+    
+    p.x += p.vx + Math.sin(p.wobble + p.y * 0.005) * driftIntensity; 
     p.y += p.vy * speedModifier;
     p.rotation += p.rotationSpeed * speedModifier;
 
-    // Fade In / Out
-    // Fade in quickly at the bottom
-    if (p.alpha < 1.0 && p.y > CANVAS_HEIGHT - 150) {
+    // 5. Alpha/Lifecycle
+    // Fade in at bottom
+    if (p.alpha < 1.0 && p.y > height - 150) {
         p.alpha += 0.02;
     } 
-    // Fade out at the top
+    // Fade out at top
     else if (p.y < 150) {
         p.alpha -= 0.01;
     }
+
+    // Twinkle effect (Alpha fluctuation based on breathing)
+    // When particle breathes in (gets larger), it gets slightly brighter
+    const twinkle = 0.1 * Math.sin(p.pulsePhase);
+    const renderAlpha = Math.max(0, Math.min(1, p.alpha + twinkle));
 
     // Kill condition
     if (p.y < -50 || p.alpha <= 0) {
@@ -159,26 +182,22 @@ const updateAndDrawParticles = (ctx: CanvasRenderingContext2D, audioData: AudioD
         continue;
     }
 
-    // DRAWING
-    ctx.globalAlpha = Math.max(0, Math.min(1, p.alpha));
+    // --- RENDER ---
+    ctx.globalAlpha = renderAlpha;
 
     if (p.type === ParticleType.ORB) {
-        // High Quality Soft Orb (Bokeh)
-        // Using shadowBlur for the glow effect
+        // Soft Glow
         ctx.shadowBlur = p.size; 
         ctx.shadowColor = p.color;
         ctx.fillStyle = p.color;
         
         ctx.beginPath();
-        // Draw the core slightly smaller, let the shadow bloom
         ctx.arc(p.x, p.y, p.size * 0.6, 0, Math.PI * 2); 
         ctx.fill();
-        
-        // Reset shadow for next draw call (performance)
         ctx.shadowBlur = 0;
         
     } else if (p.type === ParticleType.STAR) {
-        // Sparkling Star
+        // Sharp Sparkle
         ctx.shadowBlur = p.size * 0.5;
         ctx.shadowColor = p.color;
         ctx.fillStyle = p.color;
@@ -186,14 +205,12 @@ const updateAndDrawParticles = (ctx: CanvasRenderingContext2D, audioData: AudioD
         ctx.save();
         ctx.translate(p.x, p.y);
         ctx.rotate(p.rotation);
-        // 4-point star
         drawStar(ctx, 0, 0, 4, p.size, p.size * 0.25);
         ctx.restore();
-        
         ctx.shadowBlur = 0;
         
     } else {
-        // Dust (Simple Circle, high quantity)
+        // Dust - slightly translucent center
         ctx.fillStyle = p.color;
         ctx.beginPath();
         ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
@@ -202,19 +219,19 @@ const updateAndDrawParticles = (ctx: CanvasRenderingContext2D, audioData: AudioD
   }
   
   ctx.globalAlpha = 1.0;
-  ctx.globalCompositeOperation = 'source-over'; // Reset blend mode
+  ctx.globalCompositeOperation = 'source-over';
 };
 
-const drawVignette = (ctx: CanvasRenderingContext2D) => {
+const drawVignette = (ctx: CanvasRenderingContext2D, width: number, height: number) => {
     const gradient = ctx.createRadialGradient(
-        CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2, CANVAS_HEIGHT / 2.5,
-        CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2, CANVAS_HEIGHT
+        width / 2, height / 2, height / 2.5,
+        width / 2, height / 2, height
     );
     gradient.addColorStop(0, 'rgba(0,0,0,0)');
     gradient.addColorStop(1, 'rgba(0,0,0,0.8)'); // Slightly darker edges for cinema look
 
     ctx.fillStyle = gradient;
-    ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+    ctx.fillRect(0, 0, width, height);
 };
 
 // Style A: Circular Neon Pulse (Symmetrical)
@@ -223,15 +240,20 @@ const drawCircularNeon = (
   data: Uint8Array, 
   audioData: AudioData, 
   settings: VisualizerSettings,
-  centerImage: HTMLImageElement | null
+  centerImage: HTMLImageElement | null,
+  width: number,
+  height: number
 ) => {
-  const cx = CANVAS_WIDTH / 2;
-  const cy = CANVAS_HEIGHT / 2;
+  const cx = width / 2;
+  const cy = height / 2;
   const colors = getColors(settings);
   
   // Audio Reactive Pulse
   const bassBoost = (audioData.bass / 255) * settings.sensitivity;
-  const radius = 220 + (bassBoost * 30); 
+  
+  // Adapt radius to smaller dimension to fit on screen
+  const baseRadius = Math.min(width, height) * 0.2; // 20% of smallest side
+  const radius = baseRadius + (bassBoost * 30); 
 
   // --- Draw Center Image ---
   if (centerImage) {
@@ -279,9 +301,12 @@ const drawCircularNeon = (
   ctx.globalCompositeOperation = 'lighter';
   ctx.beginPath();
   
+  // Calculate max spike height based on available screen space
+  const maxSpikeHeight = Math.min(width, height) * 0.25;
+
   for (let i = 0; i < halfPoints; i++) {
     const value = data[i * step] * settings.sensitivity;
-    const height = Math.pow(value / 255, 2.0) * 280; 
+    const spikeHeight = Math.pow(value / 255, 2.0) * maxSpikeHeight; 
     
     ctx.strokeStyle = colors[Math.floor((i / halfPoints) * colors.length) % colors.length];
 
@@ -289,10 +314,10 @@ const drawCircularNeon = (
     const angleLeft = -Math.PI / 2 - (i / halfPoints) * Math.PI;
 
     ctx.moveTo(cx + Math.cos(angleRight) * radius, cy + Math.sin(angleRight) * radius);
-    ctx.lineTo(cx + Math.cos(angleRight) * (radius + height), cy + Math.sin(angleRight) * (radius + height));
+    ctx.lineTo(cx + Math.cos(angleRight) * (radius + spikeHeight), cy + Math.sin(angleRight) * (radius + spikeHeight));
 
     ctx.moveTo(cx + Math.cos(angleLeft) * radius, cy + Math.sin(angleLeft) * radius);
-    ctx.lineTo(cx + Math.cos(angleLeft) * (radius + height), cy + Math.sin(angleLeft) * (radius + height));
+    ctx.lineTo(cx + Math.cos(angleLeft) * (radius + spikeHeight), cy + Math.sin(angleLeft) * (radius + spikeHeight));
   }
   ctx.stroke();
 
@@ -307,14 +332,21 @@ const drawCircularNeon = (
 };
 
 // Style B: Mirrored Floor Spectrum
-const drawMirroredFloor = (ctx: CanvasRenderingContext2D, data: Uint8Array, audioData: AudioData, settings: VisualizerSettings) => {
+const drawMirroredFloor = (
+    ctx: CanvasRenderingContext2D, 
+    data: Uint8Array, 
+    audioData: AudioData, 
+    settings: VisualizerSettings,
+    width: number,
+    height: number
+) => {
   const barCount = 80; // More bars for premium look
-  const barWidth = (CANVAS_WIDTH / barCount) * 0.6;
-  const spacing = (CANVAS_WIDTH / barCount) * 0.4;
+  const barWidth = (width / barCount) * 0.6;
+  const spacing = (width / barCount) * 0.4;
   const colors = getColors(settings);
   const dataStep = Math.floor(data.length / 2 / barCount);
 
-  const gradient = ctx.createLinearGradient(0, CANVAS_HEIGHT / 2, 0, 0);
+  const gradient = ctx.createLinearGradient(0, height / 2, 0, 0);
   gradient.addColorStop(0, colors[1]);
   gradient.addColorStop(0.5, colors[0]);
   gradient.addColorStop(1, colors[2] || colors[0]);
@@ -326,20 +358,22 @@ const drawMirroredFloor = (ctx: CanvasRenderingContext2D, data: Uint8Array, audi
 
   for (let i = 0; i < barCount; i++) {
     const value = data[i * dataStep] * settings.sensitivity;
-    const height = Math.max(5, Math.pow(value / 255, 2) * 600);
+    const barHeight = Math.max(5, Math.pow(value / 255, 2) * (height * 0.5)); // Dynamic height based on canvas height
     
     const totalWidth = barCount * (barWidth + spacing);
-    const startX = (CANVAS_WIDTH - totalWidth) / 2;
+    const startX = (width - totalWidth) / 2;
     const x = startX + i * (barWidth + spacing);
-    const y = CANVAS_HEIGHT - 120;
+    
+    // Position 10% from bottom
+    const y = height - (height * 0.1); 
 
     // Main Bar
-    ctx.fillRect(x, y - height, barWidth, height);
+    ctx.fillRect(x, y - barHeight, barWidth, barHeight);
 
     // Reflection
     ctx.save();
     ctx.globalAlpha = 0.2;
-    ctx.fillRect(x, y + 10, barWidth, height * 0.6); 
+    ctx.fillRect(x, y + 10, barWidth, barHeight * 0.6); 
     ctx.restore();
   }
   
@@ -347,13 +381,20 @@ const drawMirroredFloor = (ctx: CanvasRenderingContext2D, data: Uint8Array, audi
   ctx.shadowBlur = 40;
   ctx.shadowColor = colors[1];
   ctx.fillStyle = colors[1];
-  ctx.fillRect(0, CANVAS_HEIGHT - 118, CANVAS_WIDTH, 2);
+  ctx.fillRect(0, height - (height * 0.1) + 2, width, 2);
 
   ctx.globalCompositeOperation = 'source-over';
 };
 
 // Style C: Reactive Waveform
-const drawReactiveWave = (ctx: CanvasRenderingContext2D, waveData: Uint8Array, audioData: AudioData, settings: VisualizerSettings) => {
+const drawReactiveWave = (
+    ctx: CanvasRenderingContext2D, 
+    waveData: Uint8Array, 
+    audioData: AudioData, 
+    settings: VisualizerSettings,
+    width: number,
+    height: number
+) => {
   const colors = getColors(settings);
   
   ctx.lineWidth = 5;
@@ -364,12 +405,12 @@ const drawReactiveWave = (ctx: CanvasRenderingContext2D, waveData: Uint8Array, a
   ctx.globalCompositeOperation = 'lighter';
   
   ctx.beginPath();
-  const sliceWidth = CANVAS_WIDTH / waveData.length;
+  const sliceWidth = width / waveData.length;
   let x = 0;
 
   for (let i = 0; i < waveData.length; i++) {
     const v = waveData[i] / 128.0;
-    const y = (v * CANVAS_HEIGHT) / 2; 
+    const y = (v * height) / 2; 
     
     const bassOffset = (audioData.bass / 255) * settings.sensitivity * 60 * Math.sin(i * 0.1);
 
@@ -390,7 +431,7 @@ const drawReactiveWave = (ctx: CanvasRenderingContext2D, waveData: Uint8Array, a
   x = 0;
   for (let i = 0; i < waveData.length; i+=2) { 
      const v = waveData[i] / 128.0;
-     const y = (v * CANVAS_HEIGHT) / 2;
+     const y = (v * height) / 2;
      const bassOffset = (audioData.bass / 255) * settings.sensitivity * 40 * Math.sin(i * 0.1 + Math.PI);
      if(i===0) ctx.moveTo(x, y);
      else ctx.lineTo(x, y + bassOffset);
@@ -407,36 +448,39 @@ export const renderFrame = (
   audioData: AudioData, 
   settings: VisualizerSettings,
   bgImage: HTMLImageElement | null,
-  centerImage: HTMLImageElement | null
+  centerImage: HTMLImageElement | null,
+  width: number,
+  height: number
 ) => {
   // Clear Canvas
-  ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+  ctx.clearRect(0, 0, width, height);
   
   // 1. Draw Background
   ctx.save();
   if (bgImage) {
-    const scale = Math.max(CANVAS_WIDTH / bgImage.width, CANVAS_HEIGHT / bgImage.height);
-    const x = (CANVAS_WIDTH / 2) - (bgImage.width / 2) * scale;
-    const y = (CANVAS_HEIGHT / 2) - (bgImage.height / 2) * scale;
+    // cover fit logic
+    const scale = Math.max(width / bgImage.width, height / bgImage.height);
+    const x = (width / 2) - (bgImage.width / 2) * scale;
+    const y = (height / 2) - (bgImage.height / 2) * scale;
     ctx.drawImage(bgImage, x, y, bgImage.width * scale, bgImage.height * scale);
     
     if (settings.enableDarkOverlay) {
         ctx.fillStyle = 'rgba(0,0,0,0.6)';
-        ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+        ctx.fillRect(0, 0, width, height);
     }
   } else {
-    const grad = ctx.createRadialGradient(CANVAS_WIDTH/2, CANVAS_HEIGHT/2, 100, CANVAS_WIDTH/2, CANVAS_HEIGHT/2, 1000);
+    const grad = ctx.createRadialGradient(width/2, height/2, 100, width/2, height/2, Math.max(width, height));
     grad.addColorStop(0, '#151515');
     grad.addColorStop(1, '#000000');
     ctx.fillStyle = grad;
-    ctx.fillRect(0,0, CANVAS_WIDTH, CANVAS_HEIGHT);
+    ctx.fillRect(0,0, width, height);
   }
   ctx.restore();
 
   // 2. Prepare Context for Visuals
   ctx.save();
   
-  // SMOOTH CAMERA SHAKE: Uses Sine waves for a floating, breathing feel that ramps up with bass
+  // SMOOTH CAMERA SHAKE
   if (settings.enableBassShake && audioData.bass > 130) {
     const time = performance.now() / 50; 
     const shakeIntensity = ((audioData.bass - 130) / 125) * 20 * settings.sensitivity;
@@ -449,19 +493,19 @@ export const renderFrame = (
   }
 
   // --- LAYER ORDER: PARTICLES FIRST (BEHIND) ---
-  updateAndDrawParticles(ctx, audioData, settings);
+  updateAndDrawParticles(ctx, audioData, settings, width, height);
 
   // --- MAIN VISUALIZER ---
   if (settings.style === VisualizerStyle.CIRCULAR_NEON) {
-    drawCircularNeon(ctx, audioData.frequencyData, audioData, settings, centerImage);
+    drawCircularNeon(ctx, audioData.frequencyData, audioData, settings, centerImage, width, height);
   } else if (settings.style === VisualizerStyle.MIRRORED_FLOOR) {
-    drawMirroredFloor(ctx, audioData.frequencyData, audioData, settings);
+    drawMirroredFloor(ctx, audioData.frequencyData, audioData, settings, width, height);
   } else if (settings.style === VisualizerStyle.REACTIVE_WAVE) {
-    drawReactiveWave(ctx, audioData.waveData, audioData, settings);
+    drawReactiveWave(ctx, audioData.waveData, audioData, settings, width, height);
   }
 
   ctx.restore(); // End Camera Shake context
 
   // 3. Cinematic Vignette (On top)
-  drawVignette(ctx);
+  drawVignette(ctx, width, height);
 };

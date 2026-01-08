@@ -1,7 +1,7 @@
 import React, { useRef, useEffect, useState } from 'react';
-import { VisualizerSettings, AudioData } from '../types';
+import { VisualizerSettings, AudioData, AspectRatio } from '../types';
 import { renderFrame } from '../utils/renderer';
-import { FFT_SIZE, CANVAS_WIDTH, CANVAS_HEIGHT } from '../constants';
+import { FFT_SIZE } from '../constants';
 
 interface Props {
   audioFile: File | null;
@@ -42,6 +42,11 @@ const VisualizerCanvas: React.FC<Props> = ({
   const audioElementRef = useRef<HTMLAudioElement | null>(null);
   const sourceRef = useRef<MediaElementAudioSourceNode | null>(null);
   const requestRef = useRef<number>(0);
+
+  // Define resolution based on aspect ratio setting
+  const isPortrait = settings.aspectRatio === AspectRatio.PORTRAIT;
+  const canvasWidth = isPortrait ? 1080 : 1920;
+  const canvasHeight = isPortrait ? 1920 : 1080;
 
   useEffect(() => {
     setCanvasRef(canvasRef.current);
@@ -130,8 +135,6 @@ const VisualizerCanvas: React.FC<Props> = ({
     analyserRef.current = analyser;
 
     // Re-use source node creation logic or create new one
-    // Note: Creating a new MediaElementSource on the same Audio object twice throws error.
-    // Since we create a NEW Audio object every time file changes, this is safe.
     const source = ctx.createMediaElementSource(audio);
     source.connect(analyser);
     analyser.connect(ctx.destination);
@@ -165,20 +168,14 @@ const VisualizerCanvas: React.FC<Props> = ({
         }
         audio.play()
             .then(() => {
-                // Animation loop starts only after successful play
                 if (!requestRef.current) requestRef.current = requestAnimationFrame(animate);
             })
             .catch(e => console.error("Playback failed", e));
         
-        // Ensure animation loop is running
         if (!requestRef.current) requestRef.current = requestAnimationFrame(animate);
 
       } else {
         audio.pause();
-        // We don't cancel animation frame here immediately to prevent canvas from clearing/flashing black
-        // But we can stop requesting new ones if strictly needed. 
-        // For a smoother UI, we keep rendering the last frame or a static frame.
-        // Let's keep rendering to allow "scrubbing" while paused to update visuals.
         if (!requestRef.current) requestRef.current = requestAnimationFrame(animate);
       }
     }
@@ -219,17 +216,31 @@ const VisualizerCanvas: React.FC<Props> = ({
       mid: midSum / (midLimit - bassLimit),
       treble: trebleSum / (bufferLength - midLimit)
     };
+    
+    // Pass current derived width/height to renderer
+    // Note: Use the actual canvas internal resolution
+    const w = canvasRef.current.width;
+    const h = canvasRef.current.height;
 
-    renderFrame(ctx, audioData, settingsRef.current, bgImage, centerImage);
+    renderFrame(ctx, audioData, settingsRef.current, bgImage, centerImage, w, h);
     requestRef.current = requestAnimationFrame(animate);
   };
 
   return (
-    <div className="w-full aspect-video bg-black rounded-lg shadow-2xl overflow-hidden border border-gray-800 relative">
+    <div 
+      className="relative shadow-2xl overflow-hidden border border-gray-800 bg-black rounded-lg transition-all duration-500 ease-in-out"
+      style={{
+        aspectRatio: isPortrait ? '9 / 16' : '16 / 9',
+        height: isPortrait ? '100%' : 'auto',
+        width: isPortrait ? 'auto' : '100%',
+        maxHeight: '100%',
+        maxWidth: '100%'
+      }}
+    >
       <canvas 
         ref={canvasRef}
-        width={CANVAS_WIDTH}
-        height={CANVAS_HEIGHT}
+        width={canvasWidth}
+        height={canvasHeight}
         className="w-full h-full object-contain"
       />
       {!audioFile && (
