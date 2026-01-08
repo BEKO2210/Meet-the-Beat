@@ -59,7 +59,7 @@ const VisualizerCanvas: React.FC<Props> = ({
     if (setAudioElementRef) {
       setAudioElementRef(audioElementRef.current);
     }
-  }, [audioElementRef.current, setAudioElementRef]);
+  }, [setAudioElementRef]); // FIXED: Removed audioElementRef.current from deps to prevent unnecessary re-renders
 
   // Handle Seek from parent
   useEffect(() => {
@@ -80,9 +80,11 @@ const VisualizerCanvas: React.FC<Props> = ({
   // Load Images
   useEffect(() => {
     if (bgImageFile) {
+      const url = URL.createObjectURL(bgImageFile);
       const img = new Image();
-      img.src = URL.createObjectURL(bgImageFile);
+      img.src = url;
       img.onload = () => setBgImage(img);
+      return () => URL.revokeObjectURL(url); // FIXED: Clean up memory leak
     } else {
       setBgImage(null);
     }
@@ -90,9 +92,11 @@ const VisualizerCanvas: React.FC<Props> = ({
 
   useEffect(() => {
     if (centerImageFile) {
+      const url = URL.createObjectURL(centerImageFile);
       const img = new Image();
-      img.src = URL.createObjectURL(centerImageFile);
+      img.src = url;
       img.onload = () => setCenterImage(img);
+      return () => URL.revokeObjectURL(url); // FIXED: Clean up memory leak
     } else {
       setCenterImage(null);
     }
@@ -143,11 +147,15 @@ const VisualizerCanvas: React.FC<Props> = ({
     analyser.smoothingTimeConstant = settings.smoothing;
     analyserRef.current = analyser;
 
-    // Re-use source node creation logic or create new one
-    const source = ctx.createMediaElementSource(audio);
-    source.connect(analyser);
-    analyser.connect(ctx.destination);
-    sourceRef.current = source;
+    // FIXED: Error handling for MediaElementSource creation
+    try {
+      const source = ctx.createMediaElementSource(audio);
+      source.connect(analyser);
+      analyser.connect(ctx.destination);
+      sourceRef.current = source;
+    } catch (error) {
+      console.error('Failed to create audio source:', error);
+    }
 
     return () => {
       audio.removeEventListener('ended', handleEnded);
@@ -155,6 +163,7 @@ const VisualizerCanvas: React.FC<Props> = ({
       audio.removeEventListener('loadedmetadata', handleTimeUpdate);
       audio.pause();
       audio.src = '';
+      URL.revokeObjectURL(url); // FIXED: Clean up memory leak
     };
   }, [audioFile]);
 
@@ -180,12 +189,18 @@ const VisualizerCanvas: React.FC<Props> = ({
                 if (!requestRef.current) requestRef.current = requestAnimationFrame(animate);
             })
             .catch(e => console.error("Playback failed", e));
-        
+
         if (!requestRef.current) requestRef.current = requestAnimationFrame(animate);
 
       } else {
         audio.pause();
-        if (!requestRef.current) requestRef.current = requestAnimationFrame(animate);
+        // FIXED: Stop animation when paused to save CPU
+        if (requestRef.current) {
+          cancelAnimationFrame(requestRef.current);
+          requestRef.current = 0;
+        }
+        // Still render one final frame when paused
+        requestRef.current = requestAnimationFrame(animate);
       }
     }
   }, [isPlaying]);

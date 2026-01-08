@@ -165,10 +165,30 @@ npm run preview
 ### Performance Optimizations
 
 - **Perlin Noise Caching**: Pre-generated permutation tables
-- **Particle Pooling**: Efficient memory management
-- **Request Animation Frame**: Smooth 60 FPS rendering
+- **Particle Pooling**: Efficient memory management with hardcap (300 particles max)
+- **Request Animation Frame**: Smooth 60 FPS rendering with automatic pause optimization
 - **Batch Draw Calls**: Minimized canvas state changes
-- **Offscreen Rendering**: Post-processing optimizations
+- **Offscreen Rendering**: Reusable temp canvas for post-processing (no GC pressure)
+- **Memory Leak Prevention**: Proper URL.revokeObjectURL() cleanup for all blob URLs
+- **Smart Trail Rendering**: Adaptive rendering skips trails when particle count > 200
+
+### Recent Bug Fixes (Latest Version)
+
+**🔧 Memory & Performance Fixes:**
+- ✅ Fixed memory leaks from `URL.createObjectURL()` not being revoked
+- ✅ Fixed temp canvas being recreated every frame in post-processing effects
+- ✅ Optimized animation loop to stop when paused (saves CPU/battery)
+- ✅ Fixed useEffect dependency array causing unnecessary re-renders
+
+**🛡️ Stability Improvements:**
+- ✅ Added error handling for AudioContext creation failures
+- ✅ Fixed potential negative array index in Perlin Noise shuffle algorithm
+- ✅ Improved cleanup in audio setup effect hook
+
+**🎬 Audio Export Enhancement:**
+- ✅ Video export now includes audio track (video + audio combined in WebM)
+- ✅ High-quality audio: 128kbps opus codec
+- ✅ Synchronized dual audio streams (visualizer + recording)
 
 ---
 

@@ -14,7 +14,8 @@ class PerlinNoise {
     }
     // Shuffle with seed
     for (let i = 255; i > 0; i--) {
-      const j = Math.floor((Math.sin(seed + i) * 10000) % (i + 1));
+      // FIXED: Use Math.abs to prevent negative array index
+      const j = Math.floor(Math.abs(Math.sin(seed + i) * 10000) % (i + 1));
       [this.permutation[i], this.permutation[j]] = [this.permutation[j], this.permutation[i]];
     }
     this.permutation = [...this.permutation, ...this.permutation];
@@ -508,16 +509,27 @@ const drawVignette = (ctx: CanvasRenderingContext2D, width: number, height: numb
 // POST-PROCESSING EFFECTS
 // ============================================================================
 
+// FIXED: Reusable temp canvas for performance (created once, not every frame)
+let tempPostProcessCanvas: HTMLCanvasElement | null = null;
+let tempPostProcessCtx: CanvasRenderingContext2D | null = null;
+
+const getTempCanvas = (width: number, height: number): [HTMLCanvasElement, CanvasRenderingContext2D] => {
+  if (!tempPostProcessCanvas || tempPostProcessCanvas.width !== width || tempPostProcessCanvas.height !== height) {
+    tempPostProcessCanvas = document.createElement('canvas');
+    tempPostProcessCanvas.width = width;
+    tempPostProcessCanvas.height = height;
+    tempPostProcessCtx = tempPostProcessCanvas.getContext('2d', { willReadFrequently: true })!;
+  }
+  return [tempPostProcessCanvas, tempPostProcessCtx];
+};
+
 // Chromatic Aberration Effect (PERFORMANCE WARNING: Sehr teuer!)
 const applyChromaticAberration = (ctx: CanvasRenderingContext2D, width: number, height: number, intensity: number) => {
   try {
     const offset = Math.floor(intensity);
 
-    // OPTIMIERT: Temporary canvas wird wiederverwendet
-    const tempCanvas = document.createElement('canvas');
-    tempCanvas.width = width;
-    tempCanvas.height = height;
-    const tempCtx = tempCanvas.getContext('2d', { willReadFrequently: true })!;
+    // FIXED: Use reusable temp canvas
+    const [tempCanvas, tempCtx] = getTempCanvas(width, height);
 
     // Copy current canvas
     tempCtx.drawImage(ctx.canvas, 0, 0);
@@ -557,11 +569,8 @@ const applyCRTEffect = (ctx: CanvasRenderingContext2D, width: number, height: nu
   try {
     applyScanlines(ctx, width, height, 0.5);
 
-    // RGB separation for CRT look (OPTIMIERT)
-    const tempCanvas = document.createElement('canvas');
-    tempCanvas.width = width;
-    tempCanvas.height = height;
-    const tempCtx = tempCanvas.getContext('2d', { willReadFrequently: true })!;
+    // FIXED: Use reusable temp canvas
+    const [tempCanvas, tempCtx] = getTempCanvas(width, height);
     tempCtx.drawImage(ctx.canvas, 0, 0);
 
     ctx.globalCompositeOperation = 'screen';
