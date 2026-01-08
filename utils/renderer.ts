@@ -97,6 +97,9 @@ let particles: Particle[] = [];
 let lastParticleMode: ParticleMode = ParticleMode.MIX; // Track mode changes
 let lastAspectRatio: AspectRatio | null = null; // Track ratio to reset particles
 
+// Performance limits
+const MAX_PARTICLES = 300; // Maximale Anzahl für gute Performance
+
 // ============================================================================
 // PARTICLE SHAPE DRAWING FUNCTIONS
 // ============================================================================
@@ -242,13 +245,18 @@ const updateAndDrawParticles = (ctx: CanvasRenderingContext2D, audioData: AudioD
   const isBassHit = audioData.bass > (125 / settings.particleSensitivity);
 
   // --- SPAWNING LOGIC (Bottom Up Only) ---
-  // "Standard" spawn rate
-  let spawnChance = 0.4 * densityMultiplier;
-  
+  // PERFORMANCE OPTIMIERT: Reduzierte Spawn-Rate
+  let spawnChance = 0.15 * densityMultiplier; // Reduziert von 0.4
+
   // If bass hits, we actually spawn a burst from the bottom to fill the void,
   // contrasting the "slow motion" effect of the existing particles.
   if (isBassHit && settings.particlesReactToBeat) {
-      spawnChance += 1.5 * densityMultiplier;
+      spawnChance += 0.6 * densityMultiplier; // Reduziert von 1.5
+  }
+
+  // Performance Limit: Stop spawning wenn zu viele Partikel
+  if (particles.length >= MAX_PARTICLES) {
+    spawnChance = 0;
   }
 
   const particlesToSpawn = Math.floor(spawnChance) + (Math.random() < (spawnChance % 1) ? 1 : 0);
@@ -342,12 +350,12 @@ const updateAndDrawParticles = (ctx: CanvasRenderingContext2D, audioData: AudioD
     // Smaller particles (Dust) drift more chaotically, larger ones have more inertia
     const driftIntensity = (30 / p.baseSize) * 0.5;
 
-    // Trail Management
+    // Trail Management (Performance optimiert)
     if (settings.particleTrails) {
       p.trail.push({ x: p.x, y: p.y, alpha: p.alpha * 0.5 });
-      if (p.trail.length > 10) p.trail.shift(); // Keep last 10 positions
+      if (p.trail.length > 5) p.trail.shift(); // Reduziert von 10 auf 5 für Performance
       // Fade out trail
-      p.trail.forEach(t => t.alpha *= 0.9);
+      p.trail.forEach(t => t.alpha *= 0.85);
     } else {
       p.trail = []; // Clear trails if disabled
     }
@@ -390,14 +398,17 @@ const updateAndDrawParticles = (ctx: CanvasRenderingContext2D, audioData: AudioD
     }
 
     // --- RENDER TRAIL FIRST (behind particle) ---
-    if (settings.particleTrails && p.trail.length > 0) {
+    // PERFORMANCE: Trail nur jedes zweite Partikel zeichnen bei hoher Anzahl
+    if (settings.particleTrails && p.trail.length > 0 && (particles.length < 200 || i % 2 === 0)) {
       for (let j = 0; j < p.trail.length; j++) {
         const t = p.trail[j];
-        ctx.globalAlpha = t.alpha;
-        ctx.fillStyle = p.color;
-        ctx.beginPath();
-        ctx.arc(t.x, t.y, p.size * 0.3, 0, Math.PI * 2);
-        ctx.fill();
+        if (t.alpha > 0.1) { // Skip fast unsichtbare trails
+          ctx.globalAlpha = t.alpha;
+          ctx.fillStyle = p.color;
+          ctx.beginPath();
+          ctx.arc(t.x, t.y, p.size * 0.3, 0, Math.PI * 2);
+          ctx.fill();
+        }
       }
     }
 
@@ -497,35 +508,38 @@ const drawVignette = (ctx: CanvasRenderingContext2D, width: number, height: numb
 // POST-PROCESSING EFFECTS
 // ============================================================================
 
-// Chromatic Aberration Effect
+// Chromatic Aberration Effect (PERFORMANCE WARNING: Sehr teuer!)
 const applyChromaticAberration = (ctx: CanvasRenderingContext2D, width: number, height: number, intensity: number) => {
-  const imageData = ctx.getImageData(0, 0, width, height);
-  const data = imageData.data;
-  const offset = Math.floor(intensity);
+  try {
+    const offset = Math.floor(intensity);
 
-  // Create temporary canvas for each color channel
-  const tempCanvas = document.createElement('canvas');
-  tempCanvas.width = width;
-  tempCanvas.height = height;
-  const tempCtx = tempCanvas.getContext('2d')!;
-  tempCtx.putImageData(imageData, 0, 0);
+    // OPTIMIERT: Temporary canvas wird wiederverwendet
+    const tempCanvas = document.createElement('canvas');
+    tempCanvas.width = width;
+    tempCanvas.height = height;
+    const tempCtx = tempCanvas.getContext('2d', { willReadFrequently: true })!;
 
-  // Clear and redraw with offset channels
-  ctx.clearRect(0, 0, width, height);
+    // Copy current canvas
+    tempCtx.drawImage(ctx.canvas, 0, 0);
 
-  // Red channel (shifted right)
-  ctx.globalCompositeOperation = 'screen';
-  ctx.globalAlpha = 0.8;
-  ctx.drawImage(tempCanvas, offset, 0);
+    // Clear and redraw with offset channels
+    ctx.globalCompositeOperation = 'screen';
+    ctx.globalAlpha = 0.8;
 
-  // Green channel (no shift)
-  ctx.drawImage(tempCanvas, 0, 0);
+    // Red channel (shifted right)
+    ctx.drawImage(tempCanvas, offset, 0);
 
-  // Blue channel (shifted left)
-  ctx.drawImage(tempCanvas, -offset, 0);
+    // Green channel (no shift)
+    ctx.drawImage(tempCanvas, 0, 0);
 
-  ctx.globalCompositeOperation = 'source-over';
-  ctx.globalAlpha = 1.0;
+    // Blue channel (shifted left)
+    ctx.drawImage(tempCanvas, -offset, 0);
+
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.globalAlpha = 1.0;
+  } catch (error) {
+    console.error('Chromatic Aberration Error:', error);
+  }
 };
 
 // Scanlines Effect (CRT/TV look)
@@ -540,28 +554,32 @@ const applyScanlines = (ctx: CanvasRenderingContext2D, width: number, height: nu
 
 // CRT Effect (combines scanlines with curvature simulation via vignette)
 const applyCRTEffect = (ctx: CanvasRenderingContext2D, width: number, height: number) => {
-  applyScanlines(ctx, width, height, 0.5);
+  try {
+    applyScanlines(ctx, width, height, 0.5);
 
-  // RGB separation for CRT look
-  const tempCanvas = document.createElement('canvas');
-  tempCanvas.width = width;
-  tempCanvas.height = height;
-  const tempCtx = tempCanvas.getContext('2d')!;
-  tempCtx.drawImage(ctx.canvas, 0, 0);
+    // RGB separation for CRT look (OPTIMIERT)
+    const tempCanvas = document.createElement('canvas');
+    tempCanvas.width = width;
+    tempCanvas.height = height;
+    const tempCtx = tempCanvas.getContext('2d', { willReadFrequently: true })!;
+    tempCtx.drawImage(ctx.canvas, 0, 0);
 
-  ctx.globalCompositeOperation = 'screen';
-  ctx.globalAlpha = 0.1;
-  ctx.drawImage(tempCanvas, 2, 0);
-  ctx.drawImage(tempCanvas, -2, 0);
-  ctx.globalCompositeOperation = 'source-over';
-  ctx.globalAlpha = 1.0;
+    ctx.globalCompositeOperation = 'screen';
+    ctx.globalAlpha = 0.1;
+    ctx.drawImage(tempCanvas, 2, 0);
+    ctx.drawImage(tempCanvas, -2, 0);
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.globalAlpha = 1.0;
 
-  // Screen flicker
-  const flicker = 0.95 + Math.random() * 0.05;
-  ctx.globalAlpha = flicker;
-  ctx.fillStyle = 'rgba(255, 255, 255, 0.03)';
-  ctx.fillRect(0, 0, width, height);
-  ctx.globalAlpha = 1.0;
+    // Screen flicker
+    const flicker = 0.95 + Math.random() * 0.05;
+    ctx.globalAlpha = flicker;
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.03)';
+    ctx.fillRect(0, 0, width, height);
+    ctx.globalAlpha = 1.0;
+  } catch (error) {
+    console.error('CRT Effect Error:', error);
+  }
 };
 
 // Motion Blur Effect

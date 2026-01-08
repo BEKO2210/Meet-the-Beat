@@ -287,14 +287,19 @@ const Controls: React.FC<Props> = ({
           <div>
             <div className="flex justify-between text-xs mb-1">
               <span>Particle Density</span>
-              <span className="text-gray-400">{settings.particleDensity.toFixed(1)}x</span>
+              <span className={`text-gray-400 ${settings.particleDensity > 1.5 ? 'text-yellow-400' : ''}`}>
+                {settings.particleDensity.toFixed(1)}x {settings.particleDensity > 1.5 && '⚠️'}
+              </span>
             </div>
-            <input 
-              type="range" min="0.1" max="3.0" step="0.1" 
+            <input
+              type="range" min="0.1" max="3.0" step="0.1"
               value={settings.particleDensity}
               onChange={(e) => updateSettings({ particleDensity: parseFloat(e.target.value) })}
               className="w-full h-1 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-pink-500"
             />
+            {settings.particleDensity > 1.5 && (
+              <p className="text-xs text-yellow-400 mt-1">⚠️ Hohe Werte können Performance beeinträchtigen</p>
+            )}
           </div>
           <div>
             <div className="flex justify-between text-xs mb-1">
@@ -473,6 +478,7 @@ const Controls: React.FC<Props> = ({
           )}
 
           <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-widest mb-1 mt-3">Post-Processing</h3>
+          <p className="text-xs text-yellow-500 mb-2">⚠️ Post-Processing ist sehr performance-intensiv!</p>
           <label className="flex items-center gap-3 cursor-pointer group">
             <input
               type="checkbox"
@@ -485,7 +491,7 @@ const Controls: React.FC<Props> = ({
               }}
               className="w-5 h-5 rounded border-gray-600 bg-gray-700 text-pink-600 focus:ring-pink-500 focus:ring-offset-gray-900"
             />
-            <span className="text-sm group-hover:text-white transition-colors">Chromatic Aberration</span>
+            <span className="text-sm group-hover:text-white transition-colors">Chromatic Aberration 🐌</span>
           </label>
           {settings.postProcessEffects.includes(PostProcessEffect.CHROMATIC_ABERRATION) && (
             <div className="ml-8">
@@ -527,7 +533,7 @@ const Controls: React.FC<Props> = ({
               }}
               className="w-5 h-5 rounded border-gray-600 bg-gray-700 text-pink-600 focus:ring-pink-500 focus:ring-offset-gray-900"
             />
-            <span className="text-sm group-hover:text-white transition-colors">CRT Effect</span>
+            <span className="text-sm group-hover:text-white transition-colors">CRT Effect 🐌</span>
           </label>
           <label className="flex items-center gap-3 cursor-pointer group">
             <input
