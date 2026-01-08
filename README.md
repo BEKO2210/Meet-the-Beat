@@ -213,7 +213,7 @@ Recursive radial mirroring with configurable segment count, creating psychedelic
 
 **Important:** This project is **NOT open source**.
 
-- **© 2024-2025 All Rights Reserved**
+- **© 2025-2026 All Rights Reserved**
 - **Private Use Only**: This software is proprietary and intended for authorized users only
 - **No Redistribution**: You may not distribute, sell, or sublicense this software
 - **No Modification**: Creating derivative works is not permitted without explicit authorization
