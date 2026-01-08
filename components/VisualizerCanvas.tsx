@@ -13,19 +13,21 @@ interface Props {
   onAudioEnd: () => void;
   onTimeUpdate: (current: number, total: number) => void; // New: Report time back
   setCanvasRef: (ref: HTMLCanvasElement | null) => void;
+  setAudioElementRef?: (ref: HTMLAudioElement | null) => void; // NEW: For audio stream
   restartTrigger: number;
 }
 
-const VisualizerCanvas: React.FC<Props> = ({ 
-  audioFile, 
-  bgImageFile, 
+const VisualizerCanvas: React.FC<Props> = ({
+  audioFile,
+  bgImageFile,
   centerImageFile,
-  settings, 
-  isPlaying, 
+  settings,
+  isPlaying,
   seekTo,
   onAudioEnd,
   onTimeUpdate,
   setCanvasRef,
+  setAudioElementRef,
   restartTrigger
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -51,6 +53,13 @@ const VisualizerCanvas: React.FC<Props> = ({
   useEffect(() => {
     setCanvasRef(canvasRef.current);
   }, [setCanvasRef]);
+
+  // NEW: Expose audio element ref to parent
+  useEffect(() => {
+    if (setAudioElementRef) {
+      setAudioElementRef(audioElementRef.current);
+    }
+  }, [audioElementRef.current, setAudioElementRef]);
 
   // Handle Seek from parent
   useEffect(() => {

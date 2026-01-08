@@ -60,6 +60,7 @@ const App: React.FC = () => {
   });
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const audioElementRef = useRef<HTMLAudioElement | null>(null); // NEW: For audio stream
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
 
@@ -129,44 +130,81 @@ const App: React.FC = () => {
 
   const startRecording = () => {
     if (!canvasRef.current || !audioFile) return;
-    
+
     // Force restart song logic
     setRestartTrigger(prev => prev + 1);
     setCurrentTime(0);
 
-    const stream = canvasRef.current.captureStream(60);
-    const mimeType = MediaRecorder.isTypeSupported('video/webm; codecs=vp9') 
-      ? 'video/webm; codecs=vp9' 
-      : 'video/webm';
-      
-    const recorder = new MediaRecorder(stream, { 
-      mimeType, 
-      videoBitsPerSecond: 8000000 
-    });
-    
-    chunksRef.current = [];
+    try {
+      // 1. Get Canvas Stream (Video)
+      const canvasStream = canvasRef.current.captureStream(60);
+      const videoTrack = canvasStream.getVideoTracks()[0];
 
-    recorder.ondataavailable = (e) => {
-       if (e.data.size > 0) chunksRef.current.push(e.data);
-    };
+      // 2. Create a SEPARATE audio element for recording (to avoid conflict with visualizer's AudioContext)
+      const recordingAudio = new Audio(URL.createObjectURL(audioFile));
 
-    recorder.onstop = () => {
-      const blob = new Blob(chunksRef.current, { type: 'video/webm' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `meet_the_beat_${Date.now()}.webm`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-    };
+      // 3. Get Audio Stream from separate audio element
+      const audioContext = new AudioContext();
+      const audioSource = audioContext.createMediaElementSource(recordingAudio);
+      const audioDestination = audioContext.createMediaStreamDestination();
 
-    mediaRecorderRef.current = recorder;
-    recorder.start();
-    setIsRecording(true);
-    
-    if (!isPlaying) setIsPlaying(true);
+      // Connect audio through destination to capture it (no speakers needed, main audio plays)
+      audioSource.connect(audioDestination);
+
+      const audioTrack = audioDestination.stream.getAudioTracks()[0];
+
+      // 4. Combine Video + Audio into one stream
+      const combinedStream = new MediaStream([videoTrack, audioTrack]);
+
+      // 5. Create MediaRecorder with combined stream
+      const mimeType = MediaRecorder.isTypeSupported('video/webm; codecs=vp9,opus')
+        ? 'video/webm; codecs=vp9,opus'
+        : 'video/webm';
+
+      const recorder = new MediaRecorder(combinedStream, {
+        mimeType,
+        videoBitsPerSecond: 8000000,
+        audioBitsPerSecond: 128000 // High quality audio
+      });
+
+      chunksRef.current = [];
+
+      recorder.ondataavailable = (e) => {
+         if (e.data.size > 0) chunksRef.current.push(e.data);
+      };
+
+      recorder.onstop = () => {
+        const blob = new Blob(chunksRef.current, { type: 'video/webm' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `meet_the_beat_${Date.now()}.webm`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+
+        // Cleanup
+        recordingAudio.pause();
+        recordingAudio.src = '';
+        audioContext.close();
+      };
+
+      mediaRecorderRef.current = recorder;
+
+      // 6. Synchronize both audio streams (visualizer + recording)
+      recordingAudio.currentTime = 0;
+      recordingAudio.play().catch(e => console.error('Recording audio playback failed:', e));
+
+      recorder.start();
+      setIsRecording(true);
+
+      if (!isPlaying) setIsPlaying(true);
+
+    } catch (error) {
+      console.error('Recording Error:', error);
+      alert('Fehler beim Starten der Aufnahme. Bitte versuchen Sie es erneut.');
+    }
   };
 
   const handleToggleRecord = () => {
@@ -181,7 +219,7 @@ const App: React.FC = () => {
     <div className="flex flex-col md:flex-row h-screen w-full bg-black overflow-hidden font-sans">
       <div className="flex-1 flex flex-col relative bg-[#0a0a0a]">
         <div className="flex-1 flex items-center justify-center p-4 md:p-8 lg:p-12 overflow-hidden">
-          <VisualizerCanvas 
+          <VisualizerCanvas
             audioFile={audioFile}
             bgImageFile={bgFile}
             centerImageFile={centerImageFile}
@@ -191,29 +229,30 @@ const App: React.FC = () => {
             onTimeUpdate={handleTimeUpdate}
             onAudioEnd={handleAudioEnd}
             setCanvasRef={(ref) => canvasRef.current = ref}
+            setAudioElementRef={(ref) => audioElementRef.current = ref}
             restartTrigger={restartTrigger}
           />
         </div>
       </div>
 
-      <Controls 
-        settings={settings}
-        updateSettings={updateSettings}
-        audioFile={audioFile}
-        bgFile={bgFile}
-        centerImageFile={centerImageFile}
-        onAudioUpload={handleAudioUpload}
-        onBgUpload={handleBgUpload}
-        onCenterImageUpload={handleCenterImageUpload}
-        isPlaying={isPlaying}
-        onPlayPause={() => setIsPlaying(!isPlaying)}
-        onStop={handleStop}
-        isRecording={isRecording}
-        onToggleRecord={handleToggleRecord}
-        currentTime={currentTime}
-        duration={duration}
-        onSeek={handleSeek}
-      />
+      <Controls
+      settings={settings}
+      updateSettings={updateSettings}
+      audioFile={audioFile}
+      bgFile={bgFile}
+      centerImageFile={centerImageFile}
+      onAudioUpload={handleAudioUpload}
+      onBgUpload={handleBgUpload}
+      onCenterImageUpload={handleCenterImageUpload}
+      isPlaying={isPlaying}
+      onPlayPause={() => setIsPlaying(!isPlaying)}
+      onStop={handleStop}
+      isRecording={isRecording}
+      onToggleRecord={handleToggleRecord}
+      currentTime={currentTime}
+      duration={duration}
+      onSeek={handleSeek}
+    />
     </div>
   );
 };
