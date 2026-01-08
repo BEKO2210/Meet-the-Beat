@@ -25,7 +25,7 @@ const App: React.FC = () => {
     // Particles
     enableParticles: true,
     particleMode: ParticleMode.MIX,
-    particleDensity: 1.0,
+    particleDensity: 0.5, // Reduziert von 1.0 für bessere Performance
     particleSensitivity: 1.2,
     particlesReactToBeat: true,
     particleTrails: false,
