@@ -1,5 +1,5 @@
 import React from 'react';
-import { VisualizerSettings, VisualizerStyle, ColorPalette, ParticleMode, AspectRatio } from '../types';
+import { VisualizerSettings, VisualizerStyle, ColorPalette, ParticleMode, AspectRatio, CameraShakeMode, PostProcessEffect } from '../types';
 import { PALETTES } from '../constants';
 import { Play, Pause, Square, Upload, Video, Music, Image as ImageIcon, CircleDot } from 'lucide-react';
 
@@ -185,15 +185,33 @@ const Controls: React.FC<Props> = ({
           </select>
 
            <label className="block text-sm mb-2 text-gray-400">Particle Type</label>
-          <select 
+          <select
             value={settings.particleMode}
             onChange={(e) => updateSettings({ particleMode: e.target.value as ParticleMode })}
+            className="w-full bg-gray-800 text-white border border-gray-700 rounded-md p-2.5 focus:ring-2 focus:ring-pink-500 focus:border-transparent outline-none mb-3"
+          >
+            <option value={ParticleMode.MIX}>✨ Magic Mix</option>
+            <option value={ParticleMode.PREMIUM_MIX}>🌟 Premium Mix (All Types)</option>
+            <option value={ParticleMode.ORBS}>⭕ Floating Orbs</option>
+            <option value={ParticleMode.STARS}>⭐ Sparkling Stars</option>
+            <option value={ParticleMode.DUST}>💨 Atmospheric Dust</option>
+            <option value={ParticleMode.RINGS}>💍 Glowing Rings</option>
+            <option value={ParticleMode.HEARTS}>❤️ Hearts</option>
+            <option value={ParticleMode.NOTES}>🎵 Music Notes</option>
+            <option value={ParticleMode.SPARKS}>⚡ Lightning Sparks</option>
+          </select>
+
+          <label className="block text-sm mb-2 text-gray-400">Camera Shake Mode</label>
+          <select
+            value={settings.cameraShakeMode}
+            onChange={(e) => updateSettings({ cameraShakeMode: e.target.value as CameraShakeMode })}
             className="w-full bg-gray-800 text-white border border-gray-700 rounded-md p-2.5 focus:ring-2 focus:ring-pink-500 focus:border-transparent outline-none"
           >
-            <option value={ParticleMode.MIX}>Magic Mix</option>
-            <option value={ParticleMode.ORBS}>Floating Orbs</option>
-            <option value={ParticleMode.STARS}>Sparkling Stars</option>
-            <option value={ParticleMode.DUST}>Atmospheric Dust</option>
+            <option value={CameraShakeMode.OFF}>Off</option>
+            <option value={CameraShakeMode.SUBTLE}>Subtle</option>
+            <option value={CameraShakeMode.MEDIUM}>Medium</option>
+            <option value={CameraShakeMode.INTENSE}>Intense</option>
+            <option value={CameraShakeMode.EARTHQUAKE}>Earthquake</option>
           </select>
         </div>
 
@@ -318,50 +336,134 @@ const Controls: React.FC<Props> = ({
 
         {/* Toggles */}
         <div className="flex flex-col gap-3 pt-2">
+          <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-widest mb-1">Particles</h3>
           <label className="flex items-center gap-3 cursor-pointer group">
-            <input 
-              type="checkbox" 
+            <input
+              type="checkbox"
               checked={settings.enableParticles}
               onChange={(e) => updateSettings({ enableParticles: e.target.checked })}
               className="w-5 h-5 rounded border-gray-600 bg-gray-700 text-pink-600 focus:ring-pink-500 focus:ring-offset-gray-900"
             />
             <span className="text-sm group-hover:text-white transition-colors">Enable Particles</span>
           </label>
-           <label className="flex items-center gap-3 cursor-pointer group ml-8">
-            <input 
-              type="checkbox" 
+          <label className="flex items-center gap-3 cursor-pointer group ml-8">
+            <input
+              type="checkbox"
               checked={settings.particlesReactToBeat}
               disabled={!settings.enableParticles}
               onChange={(e) => updateSettings({ particlesReactToBeat: e.target.checked })}
               className="w-5 h-5 rounded border-gray-600 bg-gray-700 text-pink-600 focus:ring-pink-500 focus:ring-offset-gray-900 disabled:opacity-50"
             />
-            <span className={`text-sm transition-colors ${!settings.enableParticles ? 'text-gray-600' : 'group-hover:text-white'}`}>Particles React to Beat</span>
+            <span className={`text-sm transition-colors ${!settings.enableParticles ? 'text-gray-600' : 'group-hover:text-white'}`}>React to Beat</span>
+          </label>
+          <label className="flex items-center gap-3 cursor-pointer group ml-8">
+            <input
+              type="checkbox"
+              checked={settings.particleTrails}
+              disabled={!settings.enableParticles}
+              onChange={(e) => updateSettings({ particleTrails: e.target.checked })}
+              className="w-5 h-5 rounded border-gray-600 bg-gray-700 text-pink-600 focus:ring-pink-500 focus:ring-offset-gray-900 disabled:opacity-50"
+            />
+            <span className={`text-sm transition-colors ${!settings.enableParticles ? 'text-gray-600' : 'group-hover:text-white'}`}>Motion Trails</span>
+          </label>
+          <label className="flex items-center gap-3 cursor-pointer group ml-8">
+            <input
+              type="checkbox"
+              checked={settings.particleGravity}
+              disabled={!settings.enableParticles}
+              onChange={(e) => updateSettings({ particleGravity: e.target.checked })}
+              className="w-5 h-5 rounded border-gray-600 bg-gray-700 text-pink-600 focus:ring-pink-500 focus:ring-offset-gray-900 disabled:opacity-50"
+            />
+            <span className={`text-sm transition-colors ${!settings.enableParticles ? 'text-gray-600' : 'group-hover:text-white'}`}>Gravity Physics</span>
+          </label>
+          <label className="flex items-center gap-3 cursor-pointer group ml-8">
+            <input
+              type="checkbox"
+              checked={settings.particleColorShift}
+              disabled={!settings.enableParticles}
+              onChange={(e) => updateSettings({ particleColorShift: e.target.checked })}
+              className="w-5 h-5 rounded border-gray-600 bg-gray-700 text-pink-600 focus:ring-pink-500 focus:ring-offset-gray-900 disabled:opacity-50"
+            />
+            <span className={`text-sm transition-colors ${!settings.enableParticles ? 'text-gray-600' : 'group-hover:text-white'}`}>Color Shifting</span>
           </label>
 
-           <label className="flex items-center gap-3 cursor-pointer group mt-2">
-            <input 
-              type="checkbox" 
+          <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-widest mb-1 mt-3">Camera</h3>
+          <label className="flex items-center gap-3 cursor-pointer group">
+            <input
+              type="checkbox"
               checked={settings.enableBassShake}
               onChange={(e) => updateSettings({ enableBassShake: e.target.checked })}
               className="w-5 h-5 rounded border-gray-600 bg-gray-700 text-pink-600 focus:ring-pink-500 focus:ring-offset-gray-900"
             />
             <span className="text-sm group-hover:text-white transition-colors">Enable Camera Shake</span>
           </label>
+          <label className="flex items-center gap-3 cursor-pointer group ml-8">
+            <input
+              type="checkbox"
+              checked={settings.shakeRotation}
+              disabled={!settings.enableBassShake}
+              onChange={(e) => updateSettings({ shakeRotation: e.target.checked })}
+              className="w-5 h-5 rounded border-gray-600 bg-gray-700 text-pink-600 focus:ring-pink-500 focus:ring-offset-gray-900 disabled:opacity-50"
+            />
+            <span className={`text-sm transition-colors ${!settings.enableBassShake ? 'text-gray-600' : 'group-hover:text-white'}`}>Rotation Shake</span>
+          </label>
 
+          <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-widest mb-1 mt-3">Visual Effects</h3>
           <label className="flex items-center gap-3 cursor-pointer group">
-            <input 
-              type="checkbox" 
+            <input
+              type="checkbox"
+              checked={settings.enablePerlinNoise}
+              onChange={(e) => updateSettings({ enablePerlinNoise: e.target.checked })}
+              className="w-5 h-5 rounded border-gray-600 bg-gray-700 text-pink-600 focus:ring-pink-500 focus:ring-offset-gray-900"
+            />
+            <span className="text-sm group-hover:text-white transition-colors">Organic Displacement</span>
+          </label>
+          <label className="flex items-center gap-3 cursor-pointer group">
+            <input
+              type="checkbox"
+              checked={settings.enableKaleidoscope}
+              onChange={(e) => updateSettings({ enableKaleidoscope: e.target.checked })}
+              className="w-5 h-5 rounded border-gray-600 bg-gray-700 text-pink-600 focus:ring-pink-500 focus:ring-offset-gray-900"
+            />
+            <span className="text-sm group-hover:text-white transition-colors">Kaleidoscope Mode</span>
+          </label>
+          {settings.enableKaleidoscope && (
+            <div className="ml-8">
+              <div className="flex justify-between text-xs mb-1">
+                <span>Segments</span>
+                <span className="text-gray-400">{settings.kaleidoscopeSegments}</span>
+              </div>
+              <input
+                type="range" min="3" max="12" step="1"
+                value={settings.kaleidoscopeSegments}
+                onChange={(e) => updateSettings({ kaleidoscopeSegments: parseInt(e.target.value) })}
+                className="w-full h-1 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-pink-500"
+              />
+            </div>
+          )}
+          <label className="flex items-center gap-3 cursor-pointer group">
+            <input
+              type="checkbox"
               checked={settings.enableDarkOverlay}
               onChange={(e) => updateSettings({ enableDarkOverlay: e.target.checked })}
               className="w-5 h-5 rounded border-gray-600 bg-gray-700 text-pink-600 focus:ring-pink-500 focus:ring-offset-gray-900"
             />
             <span className="text-sm group-hover:text-white transition-colors">Darken Background</span>
           </label>
-          
+          <label className="flex items-center gap-3 cursor-pointer group">
+            <input
+              type="checkbox"
+              checked={settings.showFrequencyBars}
+              onChange={(e) => updateSettings({ showFrequencyBars: e.target.checked })}
+              className="w-5 h-5 rounded border-gray-600 bg-gray-700 text-pink-600 focus:ring-pink-500 focus:ring-offset-gray-900"
+            />
+            <span className="text-sm group-hover:text-white transition-colors">Show Frequency Analyzer</span>
+          </label>
+
           {settings.style === VisualizerStyle.CIRCULAR_NEON && (
-             <label className="flex items-center gap-3 cursor-pointer group">
-              <input 
-                type="checkbox" 
+            <label className="flex items-center gap-3 cursor-pointer group">
+              <input
+                type="checkbox"
                 checked={settings.centerImageRotation}
                 onChange={(e) => updateSettings({ centerImageRotation: e.target.checked })}
                 className="w-5 h-5 rounded border-gray-600 bg-gray-700 text-pink-600 focus:ring-pink-500 focus:ring-offset-gray-900"
@@ -369,6 +471,78 @@ const Controls: React.FC<Props> = ({
               <span className="text-sm group-hover:text-white transition-colors">Rotate Center Image</span>
             </label>
           )}
+
+          <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-widest mb-1 mt-3">Post-Processing</h3>
+          <label className="flex items-center gap-3 cursor-pointer group">
+            <input
+              type="checkbox"
+              checked={settings.postProcessEffects.includes(PostProcessEffect.CHROMATIC_ABERRATION)}
+              onChange={(e) => {
+                const newEffects = e.target.checked
+                  ? [...settings.postProcessEffects, PostProcessEffect.CHROMATIC_ABERRATION]
+                  : settings.postProcessEffects.filter(fx => fx !== PostProcessEffect.CHROMATIC_ABERRATION);
+                updateSettings({ postProcessEffects: newEffects });
+              }}
+              className="w-5 h-5 rounded border-gray-600 bg-gray-700 text-pink-600 focus:ring-pink-500 focus:ring-offset-gray-900"
+            />
+            <span className="text-sm group-hover:text-white transition-colors">Chromatic Aberration</span>
+          </label>
+          {settings.postProcessEffects.includes(PostProcessEffect.CHROMATIC_ABERRATION) && (
+            <div className="ml-8">
+              <div className="flex justify-between text-xs mb-1">
+                <span>Intensity</span>
+                <span className="text-gray-400">{settings.chromaticAberrationIntensity}</span>
+              </div>
+              <input
+                type="range" min="1" max="10" step="1"
+                value={settings.chromaticAberrationIntensity}
+                onChange={(e) => updateSettings({ chromaticAberrationIntensity: parseInt(e.target.value) })}
+                className="w-full h-1 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-pink-500"
+              />
+            </div>
+          )}
+          <label className="flex items-center gap-3 cursor-pointer group">
+            <input
+              type="checkbox"
+              checked={settings.postProcessEffects.includes(PostProcessEffect.SCANLINES)}
+              onChange={(e) => {
+                const newEffects = e.target.checked
+                  ? [...settings.postProcessEffects, PostProcessEffect.SCANLINES]
+                  : settings.postProcessEffects.filter(fx => fx !== PostProcessEffect.SCANLINES);
+                updateSettings({ postProcessEffects: newEffects });
+              }}
+              className="w-5 h-5 rounded border-gray-600 bg-gray-700 text-pink-600 focus:ring-pink-500 focus:ring-offset-gray-900"
+            />
+            <span className="text-sm group-hover:text-white transition-colors">Scanlines</span>
+          </label>
+          <label className="flex items-center gap-3 cursor-pointer group">
+            <input
+              type="checkbox"
+              checked={settings.postProcessEffects.includes(PostProcessEffect.CRT)}
+              onChange={(e) => {
+                const newEffects = e.target.checked
+                  ? [...settings.postProcessEffects, PostProcessEffect.CRT]
+                  : settings.postProcessEffects.filter(fx => fx !== PostProcessEffect.CRT);
+                updateSettings({ postProcessEffects: newEffects });
+              }}
+              className="w-5 h-5 rounded border-gray-600 bg-gray-700 text-pink-600 focus:ring-pink-500 focus:ring-offset-gray-900"
+            />
+            <span className="text-sm group-hover:text-white transition-colors">CRT Effect</span>
+          </label>
+          <label className="flex items-center gap-3 cursor-pointer group">
+            <input
+              type="checkbox"
+              checked={settings.postProcessEffects.includes(PostProcessEffect.MOTION_BLUR)}
+              onChange={(e) => {
+                const newEffects = e.target.checked
+                  ? [...settings.postProcessEffects, PostProcessEffect.MOTION_BLUR]
+                  : settings.postProcessEffects.filter(fx => fx !== PostProcessEffect.MOTION_BLUR);
+                updateSettings({ postProcessEffects: newEffects });
+              }}
+              className="w-5 h-5 rounded border-gray-600 bg-gray-700 text-pink-600 focus:ring-pink-500 focus:ring-offset-gray-900"
+            />
+            <span className="text-sm group-hover:text-white transition-colors">Motion Blur</span>
+          </label>
         </div>
       </div>
 
